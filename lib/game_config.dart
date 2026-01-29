@@ -8,12 +8,14 @@ class GameConfig {
   static const double totalEffectDuration = 5.0; // Seconds
   static const int initialHp = 100;
   static const int damage = 10;
+  static const int matchDuration = 60; // Seconds
 
   // Power Up Types
   static const int powerUpNone = 0;
   static const int powerUpSpeed = 1;
   static const int powerUpSword = 2;
   static const int powerUpShield = 3;
+  static const int powerUpMulti = 4;
 
   // Spawning Probability
   static const double dualSpawnChance = 0.20;

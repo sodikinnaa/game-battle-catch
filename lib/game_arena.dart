@@ -31,15 +31,7 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
     // Setup Callbacks
     _engine.onGameOver = _handleGameOver;
     _engine.onPowerUpCollected = (team, type) {
-       String typeName = type == 1 ? "Speed" : type == 2 ? "Sword" : "Shield";
-       Color color = team == 1 ? Colors.cyanAccent : Colors.redAccent;
-       ScaffoldMessenger.of(context).showSnackBar(
-         SnackBar(
-            content: Text("Team $team Got $typeName!"), 
-            duration: const Duration(seconds: 1), 
-            backgroundColor: color
-         ),
-       );
+       // Notification disabled
     };
 
     _scheduleNextPowerUp();
@@ -156,6 +148,27 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              // 0. Match Timer
+              Container(
+                margin: const EdgeInsets.only(bottom: 20),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: Text(
+                  "${(_engine.matchTime ~/ 60).toString().padLeft(2, '0')}:${(_engine.matchTime % 60).toInt().toString().padLeft(2, '0')}",
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 2,
+                    fontFamily: 'Courier', // Monospace look
+                  ),
+                ),
+              ),
+
               // 1. The Arena (Blank Black with Neon Border)
               Container(
                 width: arenaWidth,
@@ -187,18 +200,21 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
                             child: Icon(
                                 type == 1 ? Icons.bolt 
                                 : type == 2 ? Icons.catching_pokemon 
-                                : Icons.shield,
+                                : type == 3 ? Icons.shield
+                                : Icons.control_point_duplicate,
                                 
                                 color: type == 1 ? Colors.yellow 
                                 : type == 2 ? Colors.orangeAccent 
-                                : Colors.greenAccent,
+                                : type == 3 ? Colors.greenAccent
+                                : Colors.purpleAccent,
                                 
                                 size: GameConfig.powerUpSize,
                                 shadows: [
                                     BoxShadow(
                                         color: (type == 1 ? Colors.yellowAccent 
                                               : type == 2 ? Colors.orange 
-                                              : Colors.green).withOpacity(0.8),
+                                              : type == 3 ? Colors.green
+                                              : Colors.purple).withOpacity(0.8),
                                         blurRadius: 10,
                                         spreadRadius: 2,
                                     )
@@ -206,71 +222,17 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
                             ),
                         );
                     }),
+                    
+                    // Clones (Now look exactly like players)
+                    ..._engine.clones.map((clone) {
+                        return _buildPlayer(team: clone['team'], pos: clone['pos']);
+                    }),
                         
-                    // Team 1 Player (Left - Cyan)
-                    Positioned(
-                      left: _engine.pos1.dx,
-                      top: _engine.pos1.dy,
-                      child: Container(
-                        width: GameConfig.playerSize,
-                        height: GameConfig.playerSize,
-                        decoration: BoxDecoration(
-                          color: Colors.cyanAccent, // Always team color
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: (_engine.shieldTime1 > 0) ? Colors.greenAccent // Shield Priority
-                                   : (_engine.swordTime1 > 0 && _engine.speedTime1 > 0) ? Colors.white 
-                                   : (_engine.swordTime1 > 0) ? Colors.orangeAccent 
-                                   : (_engine.speedTime1 > 0) ? Colors.yellowAccent 
-                                   : Colors.cyanAccent.withOpacity(0.6), 
-                              blurRadius: (_engine.speedTime1 > 0 || _engine.swordTime1 > 0 || _engine.shieldTime1 > 0) ? 20 : 15,
-                              spreadRadius: (_engine.speedTime1 > 0 || _engine.swordTime1 > 0 || _engine.shieldTime1 > 0) ? 4 : 2, 
-                            ),
-                          ],
-                          border: Border.all(
-                            color: (_engine.shieldTime1 > 0) ? Colors.greenAccent
-                                 : (_engine.swordTime1 > 0 && _engine.speedTime1 > 0) ? Colors.white
-                                 : (_engine.swordTime1 > 0) ? Colors.orangeAccent
-                                 : (_engine.speedTime1 > 0) ? Colors.yellowAccent
-                                 : Colors.white,
-                            width: (_engine.speedTime1 > 0 || _engine.swordTime1 > 0 || _engine.shieldTime1 > 0) ? 4 : 2,
-                          ),
-                        ),
-                      ),
-                    ),
-                    // Team 2 Player (Right - Red)
-                    Positioned(
-                      left: _engine.pos2.dx,
-                      top: _engine.pos2.dy,
-                      child: Container(
-                        width: GameConfig.playerSize,
-                        height: GameConfig.playerSize,
-                        decoration: BoxDecoration(
-                          color: Colors.redAccent, // Always team color
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: (_engine.shieldTime2 > 0) ? Colors.greenAccent 
-                                   : (_engine.swordTime2 > 0 && _engine.speedTime2 > 0) ? Colors.white 
-                                   : (_engine.swordTime2 > 0) ? Colors.orangeAccent 
-                                   : (_engine.speedTime2 > 0) ? Colors.yellowAccent 
-                                   : Colors.redAccent.withOpacity(0.6), 
-                              blurRadius: (_engine.speedTime2 > 0 || _engine.swordTime2 > 0 || _engine.shieldTime2 > 0) ? 20 : 15,
-                              spreadRadius: (_engine.speedTime2 > 0 || _engine.swordTime2 > 0 || _engine.shieldTime2 > 0) ? 4 : 2,
-                            ),
-                          ],
-                          border: Border.all(
-                            color: (_engine.shieldTime2 > 0) ? Colors.greenAccent
-                                 : (_engine.swordTime2 > 0 && _engine.speedTime2 > 0) ? Colors.white
-                                 : (_engine.swordTime2 > 0) ? Colors.orangeAccent
-                                 : (_engine.speedTime2 > 0) ? Colors.yellowAccent
-                                 : Colors.white,
-                            width: (_engine.speedTime2 > 0 || _engine.swordTime2 > 0 || _engine.shieldTime2 > 0) ? 4 : 2,
-                          ),
-                        ),
-                      ),
-                    ),
+                    // Team 1 Player
+                    _buildPlayer(team: 1, pos: _engine.pos1),
+                    
+                    // Team 2 Player
+                    _buildPlayer(team: 2, pos: _engine.pos2),
                   ],
                 ),
               ),
@@ -326,11 +288,13 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
     bool hasSpeed = ownerId == 1 ? _engine.speedTime1 > 0 : _engine.speedTime2 > 0;
     bool hasSword = ownerId == 1 ? _engine.swordTime1 > 0 : _engine.swordTime2 > 0;
     bool hasShield = ownerId == 1 ? _engine.shieldTime1 > 0 : _engine.shieldTime2 > 0;
+    bool hasMulti = ownerId == 1 ? _engine.multiTime1 > 0 : _engine.multiTime2 > 0;
     
     // Progress for bars (Use specific timer)
     double speedProgress = (ownerId == 1 ? _engine.speedTime1 : _engine.speedTime2) / GameConfig.totalEffectDuration;
     double swordProgress = (ownerId == 1 ? _engine.swordTime1 : _engine.swordTime2) / GameConfig.totalEffectDuration;
     double shieldProgress = (ownerId == 1 ? _engine.shieldTime1 : _engine.shieldTime2) / GameConfig.totalEffectDuration;
+    double multiProgress = (ownerId == 1 ? _engine.multiTime1 : _engine.multiTime2) / GameConfig.totalEffectDuration;
     
     int hp = ownerId == 1 ? _engine.hp1 : _engine.hp2;
     return Column(
@@ -465,6 +429,44 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
           ),
         ),
 
+        // 4. Multi Info Row
+        Padding(
+          padding: const EdgeInsets.only(top: 4.0),
+          child: Row(
+             mainAxisSize: MainAxisSize.min,
+             mainAxisAlignment: alignment == Alignment.centerLeft 
+                ? MainAxisAlignment.start 
+                : MainAxisAlignment.end,
+             children: [
+               if (alignment == Alignment.centerLeft) ...[
+                 Icon(Icons.control_point_duplicate, color: hasMulti ? Colors.purpleAccent : Colors.white24, size: 16),
+                 const SizedBox(width: 4),
+                 SizedBox(
+                   width: 120,
+                   child: LinearProgressIndicator(
+                     value: hasMulti ? multiProgress : 0.0,
+                     backgroundColor: Colors.white10,
+                     color: hasMulti ? Colors.purpleAccent : Colors.grey, 
+                     minHeight: 4, borderRadius: BorderRadius.circular(2),
+                   ),
+                 ),
+               ] else ...[
+                 SizedBox(
+                   width: 120,
+                   child: LinearProgressIndicator(
+                     value: hasMulti ? multiProgress : 0.0,
+                     backgroundColor: Colors.white10,
+                     color: hasMulti ? Colors.purpleAccent : Colors.grey, 
+                     minHeight: 4, borderRadius: BorderRadius.circular(2),
+                   ),
+                 ),
+                 const SizedBox(width: 4),
+                 Icon(Icons.control_point_duplicate, color: hasMulti ? Colors.purpleAccent : Colors.white24, size: 16),
+               ],
+             ],
+          ),
+        ),
+
         const SizedBox(height: 8),
         // HP Bar Container
         Container(
@@ -504,6 +506,53 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildPlayer({required int team, required Offset pos}) {
+    // Determine active effects for this team
+    bool hasSpeed = team == 1 ? _engine.speedTime1 > 0 : _engine.speedTime2 > 0;
+    bool hasSword = team == 1 ? _engine.swordTime1 > 0 : _engine.swordTime2 > 0;
+    bool hasShield = team == 1 ? _engine.shieldTime1 > 0 : _engine.shieldTime2 > 0;
+    
+    Color baseColor = team == 1 ? Colors.cyanAccent : Colors.redAccent;
+    Color glowColor;
+    
+    // Priority: Shield > Sword+Speed > Sword > Speed > Default
+    if (hasShield) {
+      glowColor = Colors.greenAccent;
+    } else if (hasSword && hasSpeed) {
+      glowColor = Colors.white;
+    } else if (hasSword) {
+      glowColor = Colors.orangeAccent;
+    } else if (hasSpeed) {
+      glowColor = Colors.yellowAccent;
+    } else {
+      glowColor = baseColor.withOpacity(0.6);
+    }
+    
+    return Positioned(
+      left: pos.dx,
+      top: pos.dy,
+      child: Container(
+        width: GameConfig.playerSize,
+        height: GameConfig.playerSize,
+        decoration: BoxDecoration(
+          color: baseColor, 
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: glowColor,
+              blurRadius: (hasSpeed || hasSword || hasShield) ? 20 : 15,
+              spreadRadius: (hasSpeed || hasSword || hasShield) ? 4 : 2, 
+            ),
+          ],
+          border: Border.all(
+            color: (hasShield || hasSword || hasSpeed) ? glowColor : Colors.white,
+            width: (hasSpeed || hasSword || hasShield) ? 4 : 2,
+          ),
+        ),
+      ),
     );
   }
 }
