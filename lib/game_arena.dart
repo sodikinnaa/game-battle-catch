@@ -36,12 +36,14 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
   int _hp2 = 100;
 
   // PowerUp/Effect State
-  // Type: 0 = None, 1 = Speed (Bolt), 2 = Sword (Attack)
-  List<Map<String, dynamic>> _spawnedItems = []; // [{'pos': Offset, 'type': int}]
-  int _activeEffectType = 0;
-  int _effectOwner = 0; // 1 or 2
+  List<Map<String, dynamic>> _spawnedItems = []; 
   
-  double _currentEffectTime = 0.0;
+  // Independent Effect Timers (Seconds)
+  double _speedTime1 = 0.0;
+  double _swordTime1 = 0.0;
+  double _speedTime2 = 0.0;
+  double _swordTime2 = 0.0;
+  
   final double _totalEffectDuration = 5.0; // Seconds
 
   bool _initialized = false;
@@ -73,8 +75,9 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
         return;
     }
 
-    // Only spawn if NO effect is currently active AND no items are on ground
-    if (_currentEffectTime > 0 || _spawnedItems.isNotEmpty) {
+    // Only spawn if no items are currently on ground (wait for clear board)
+    // We NO LONGER check for active effects, allowing overlapping skills.
+    if (_spawnedItems.isNotEmpty) {
       _scheduleNextPowerUp();
       return;
     }
@@ -111,25 +114,13 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
     if (_hp1 <= 0 || _hp2 <= 0) return;
 
     setState(() {
-      // Update Effect Timer
-      if (_currentEffectTime > 0) {
-        _currentEffectTime -= 0.016; // Approx 60fps frame time
-        if (_currentEffectTime <= 0) {
-          _currentEffectTime = 0;
-          
-          // Reset Effects
-          if (_activeEffectType == 1 && _activeEffectType == 1) { // Was Speed
-             if (_effectOwner == 1) _vel1 *= 0.5; // Revert speed
-             if (_effectOwner == 2) _vel2 *= 0.5;
-          }
-           // Sword effect just ends (no physics revert needed)
-          
-          _activeEffectType = 0;
-          _effectOwner = 0;
-          
-          _scheduleNextPowerUp(); // Schedule next item
-        }
-      }
+      // Update Effect Timers
+      if (_speedTime1 > 0) _speedTime1 = max(0, _speedTime1 - 0.016);
+      if (_swordTime1 > 0) _swordTime1 = max(0, _swordTime1 - 0.016);
+      if (_speedTime2 > 0) _speedTime2 = max(0, _speedTime2 - 0.016);
+      if (_swordTime2 > 0) _swordTime2 = max(0, _swordTime2 - 0.016);
+      
+      // Schedule next item if board empty (handled by timer, but ensure logic consistency)
       
       _updatePhysics();
     });
@@ -151,12 +142,9 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
     _checkPowerUpCollision();
 
     // 5. Clamp Velocities 
-    // Speed boost active if Type == 1
-    bool speedBoost1 = (_activeEffectType == 1 && _effectOwner == 1);
-    bool speedBoost2 = (_activeEffectType == 1 && _effectOwner == 2);
-    
-    _vel1 = _clampVelocity(_vel1, speedBoost1);
-    _vel2 = _clampVelocity(_vel2, speedBoost2);
+    // Speed boost active if speed timer > 0
+    _vel1 = _clampVelocity(_vel1, _speedTime1 > 0);
+    _vel2 = _clampVelocity(_vel2, _speedTime2 > 0);
   }
 
   Offset _clampVelocity(Offset vel, bool isBoosted) {
@@ -212,17 +200,20 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
   
   void _activatePowerUp(int playerIdx, int type) {
      setState(() {
-       _currentEffectTime = _totalEffectDuration;
-       _activeEffectType = type;
-       _effectOwner = playerIdx;
-       
-       String typeName = _activeEffectType == 1 ? "Speed" : "Sword";
+       String typeName = type == 1 ? "Speed" : "Sword";
        Color color = playerIdx == 1 ? Colors.cyanAccent : Colors.redAccent;
 
-       if (_activeEffectType == 1) {
-          // Double speed immediately for physics kick
-          if (playerIdx == 1) _vel1 *= 2.0;
-          else _vel2 *= 2.0;
+       if (type == 1) { // Speed
+          if (playerIdx == 1) {
+             if (_speedTime1 <= 0) _vel1 *= 2.0; // Only kick speed if not already boosted
+             _speedTime1 = _totalEffectDuration;
+          } else {
+             if (_speedTime2 <= 0) _vel2 *= 2.0;
+             _speedTime2 = _totalEffectDuration;
+          }
+       } else { // Sword
+          if (playerIdx == 1) _swordTime1 = _totalEffectDuration;
+          else _swordTime2 = _totalEffectDuration;
        }
        
        ScaffoldMessenger.of(context).showSnackBar(
@@ -233,16 +224,8 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
          ),
        );
        
-       // Clear remaining items if one effect is activated? 
-       // User usually expects power ups to be race. 
-       // If one is picked, usually the "Turn" ends or phase changes.
-       // But if "Both spawn", maybe player 2 can pick the other?
-       // Let's decide: If an effect is active, we usually block spawning. 
-       // If we let Player 2 pick the other item, we have 2 Active Boosts?
-       // Current architecture uses `_activeEffectType` (Single variable).
-       // It cannot support 2 active effects at once efficiently without significant refactor.
-       // So, if one is picked, we should probably clear the board to prevent bugs or state overwrites.
-       _spawnedItems.clear();
+       // Do not clear _spawnedItems here. Handled by collision loop.
+       _scheduleNextPowerUp(); // Ensure cycle continues
      });
   }
 
@@ -314,21 +297,16 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
       // Do not resolve if velocities are separating
       if (velAlongNormal > 0) return;
 
-      // Damage Logic (Sword)
-      if (_activeEffectType == 2) { // Sword Active
-         if (_effectOwner == 1) {
-            _hp2 = max(0, _hp2 - 10); // Player 1 hits Player 2
-            if (_hp2 == 0) {
-               _handleGameOver(1);
-               return; // Stop processing collision physics if game over
-            }
-         } else if (_effectOwner == 2) {
-            _hp1 = max(0, _hp1 - 10); // Player 2 hits Player 1
-             if (_hp1 == 0) {
-               _handleGameOver(2);
-               return;
-            }
-         }
+      // Damage Logic (Swords)
+      // Both can deal damage if both have swords!
+      if (_swordTime1 > 0) { // P1 hits P2
+         _hp2 = max(0, _hp2 - 10);
+         if (_hp2 == 0) { _handleGameOver(1); return; }
+      }
+      
+      if (_swordTime2 > 0) { // P2 hits P1
+         _hp1 = max(0, _hp1 - 10);
+         if (_hp1 == 0) { _handleGameOver(2); return; }
       }
 
       // Restitution (bounciness)
@@ -417,8 +395,8 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
         _hp1 = 100;
         _hp2 = 100;
         
-        _activeEffectType = 0;
-        _currentEffectTime = 0;
+        _speedTime1 = 0; _swordTime1 = 0;
+        _speedTime2 = 0; _swordTime2 = 0;
         _spawnedItems.clear();
         
         // Re-initialize positions and velocities
@@ -510,13 +488,13 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
                         height: _playerSize,
                         decoration: BoxDecoration(
                           // Flash white if ANY effect (Speed or Sword) is active for this player
-                          color: (_activeEffectType != 0 && _effectOwner == 1) ? Colors.white : Colors.cyanAccent, 
+                          color: (_speedTime1 > 0 || _swordTime1 > 0) ? Colors.white : Colors.cyanAccent, 
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: ((_activeEffectType != 0 && _effectOwner == 1) ? Colors.white : Colors.cyanAccent).withOpacity(0.6),
+                              color: ((_speedTime1 > 0 || _swordTime1 > 0) ? Colors.white : Colors.cyanAccent).withOpacity(0.6),
                               blurRadius: 15,
-                              spreadRadius: (_activeEffectType != 0 && _effectOwner == 1) ? 6 : 2, 
+                              spreadRadius: (_speedTime1 > 0 || _swordTime1 > 0) ? 6 : 2, 
                             ),
                           ],
                           border: Border.all(
@@ -534,13 +512,13 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
                         width: _playerSize,
                         height: _playerSize,
                         decoration: BoxDecoration(
-                          color: (_activeEffectType != 0 && _effectOwner == 2) ? Colors.white : Colors.redAccent,
+                          color: (_speedTime2 > 0 || _swordTime2 > 0) ? Colors.white : Colors.redAccent,
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: ((_activeEffectType != 0 && _effectOwner == 2) ? Colors.white : Colors.redAccent).withOpacity(0.6),
+                              color: ((_speedTime2 > 0 || _swordTime2 > 0) ? Colors.white : Colors.redAccent).withOpacity(0.6),
                               blurRadius: 15,
-                              spreadRadius: (_activeEffectType != 0 && _effectOwner == 2) ? 6 : 2,
+                              spreadRadius: (_speedTime2 > 0 || _swordTime2 > 0) ? 6 : 2,
                             ),
                           ],
                           border: Border.all(
@@ -602,11 +580,13 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
     int ownerId,
   ) {
     // Check Statuses
-    bool hasSpeed = (_activeEffectType == 1 && _effectOwner == ownerId);
-    bool hasSword = (_activeEffectType == 2 && _effectOwner == ownerId);
+    bool hasSpeed = ownerId == 1 ? _speedTime1 > 0 : _speedTime2 > 0;
+    bool hasSword = ownerId == 1 ? _swordTime1 > 0 : _swordTime2 > 0;
     
-    // Progress for bars
-    double progress = (_currentEffectTime / _totalEffectDuration);
+    // Progress for bars (Use specific timer)
+    double speedProgress = (ownerId == 1 ? _speedTime1 : _speedTime2) / _totalEffectDuration;
+    double swordProgress = (ownerId == 1 ? _swordTime1 : _swordTime2) / _totalEffectDuration;
+    
     int hp = ownerId == 1 ? _hp1 : _hp2;
     return Column(
       crossAxisAlignment: alignment == Alignment.centerLeft 
@@ -641,7 +621,7 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
                  SizedBox(
                    width: 120,
                    child: LinearProgressIndicator(
-                     value: hasSpeed ? progress : 0.0,
+                     value: hasSpeed ? speedProgress : 0.0,
                      backgroundColor: Colors.white10,
                      color: hasSpeed ? Colors.yellowAccent : Colors.grey, 
                      minHeight: 4, borderRadius: BorderRadius.circular(2),
@@ -651,7 +631,7 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
                  SizedBox(
                    width: 120,
                    child: LinearProgressIndicator(
-                     value: hasSpeed ? progress : 0.0,
+                     value: hasSpeed ? speedProgress : 0.0,
                      backgroundColor: Colors.white10,
                      color: hasSpeed ? Colors.yellowAccent : Colors.grey, 
                      minHeight: 4, borderRadius: BorderRadius.circular(2),
@@ -679,7 +659,7 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
                  SizedBox(
                    width: 120,
                    child: LinearProgressIndicator(
-                     value: hasSword ? progress : 0.0,
+                     value: hasSword ? swordProgress : 0.0,
                      backgroundColor: Colors.white10,
                      color: hasSword ? Colors.orangeAccent : Colors.grey, 
                      minHeight: 4, borderRadius: BorderRadius.circular(2),
@@ -689,7 +669,7 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
                  SizedBox(
                    width: 120,
                    child: LinearProgressIndicator(
-                     value: hasSword ? progress : 0.0,
+                     value: hasSword ? swordProgress : 0.0,
                      backgroundColor: Colors.white10,
                      color: hasSword ? Colors.orangeAccent : Colors.grey, 
                      minHeight: 4, borderRadius: BorderRadius.circular(2),
