@@ -29,16 +29,21 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
   // State for Player 1 (Team 1 - Cyan)
   Offset _pos1 = Offset.zero;
   Offset _vel1 = const Offset(3, 3);
-  bool _isBoosted1 = false;
+  int _hp1 = 100;
 
   // State for Player 2 (Team 2 - Red)
   Offset _pos2 = Offset.zero;
   Offset _vel2 = const Offset(-3, 2);
-  bool _isBoosted2 = false;
+  int _hp2 = 100;
 
-  // Boost Timer State
-  double _currentBoostTime = 0.0;
-  final double _totalBoostDuration = 5.0; // Seconds
+  // PowerUp/Effect State
+  // Type: 0 = None, 1 = Speed (Bolt), 2 = Sword (Attack)
+  int _itemOnGroundType = 0; 
+  int _activeEffectType = 0;
+  int _effectOwner = 0; // 1 or 2
+  
+  double _currentEffectTime = 0.0;
+  final double _totalEffectDuration = 5.0; // Seconds
 
   bool _initialized = false;
   final Random _random = Random();
@@ -69,8 +74,8 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
         return;
     }
 
-    // Only spawn if NO boost is currently active
-    if (_currentBoostTime > 0) {
+    // Only spawn if NO effect is currently active
+    if (_currentEffectTime > 0) {
       _scheduleNextPowerUp();
       return;
     }
@@ -79,21 +84,36 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
       double x = _random.nextDouble() * (_arenaSize.width - _powerUpSize);
       double y = _random.nextDouble() * (_arenaSize.height - _powerUpSize);
       _powerUpPos = Offset(x, y);
+      
+      // Randomize Item Type (1: Speed, 2: Sword)
+      _itemOnGroundType = _random.nextBool() ? 1 : 2; 
     });
   }
 
   void _tick(Duration elapsed) {
     if (!_initialized || _arenaSize == Size.zero) return;
+    
+    // Check Game Over
+    if (_hp1 <= 0 || _hp2 <= 0) return;
 
     setState(() {
-      // Update Boost Timer
-      if (_currentBoostTime > 0) {
-        _currentBoostTime -= 0.016; // Approx 60fps frame time
-        if (_currentBoostTime <= 0) {
-          _currentBoostTime = 0;
-          _isBoosted1 = false;
-          _isBoosted2 = false;
-          _scheduleNextPowerUp(); // Schedule next item only after boost ends
+      // Update Effect Timer
+      if (_currentEffectTime > 0) {
+        _currentEffectTime -= 0.016; // Approx 60fps frame time
+        if (_currentEffectTime <= 0) {
+          _currentEffectTime = 0;
+          
+          // Reset Effects
+          if (_activeEffectType == 1 && _activeEffectType == 1) { // Was Speed
+             if (_effectOwner == 1) _vel1 *= 0.5; // Revert speed
+             if (_effectOwner == 2) _vel2 *= 0.5;
+          }
+           // Sword effect just ends (no physics revert needed)
+          
+          _activeEffectType = 0;
+          _effectOwner = 0;
+          
+          _scheduleNextPowerUp(); // Schedule next item
         }
       }
       
@@ -116,9 +136,13 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
     // 4. PowerUp Collision
     _checkPowerUpCollision();
 
-    // 5. Clamp Velocities to Min/Max Speed (Active Max depends on boost)
-    _vel1 = _clampVelocity(_vel1, _isBoosted1);
-    _vel2 = _clampVelocity(_vel2, _isBoosted2);
+    // 5. Clamp Velocities 
+    // Speed boost active if Type == 1
+    bool speedBoost1 = (_activeEffectType == 1 && _effectOwner == 1);
+    bool speedBoost2 = (_activeEffectType == 1 && _effectOwner == 2);
+    
+    _vel1 = _clampVelocity(_vel1, speedBoost1);
+    _vel2 = _clampVelocity(_vel2, speedBoost2);
   }
 
   Offset _clampVelocity(Offset vel, bool isBoosted) {
@@ -139,11 +163,11 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
     
     // Check Team 1
     if (_checkCollision(_pos1, _playerSize, _powerUpPos!, _powerUpSize)) {
-        _activateBoost(1);
+        _activatePowerUp(1);
     }
     // Check Team 2
     else if (_checkCollision(_pos2, _playerSize, _powerUpPos!, _powerUpSize)) {
-        _activateBoost(2);
+        _activatePowerUp(2);
     }
   }
   
@@ -156,25 +180,30 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
     return distance < (s1/2 + s2/2);
   }
   
-  void _activateBoost(int playerIdx) {
+  void _activatePowerUp(int playerIdx) {
      setState(() {
        _powerUpPos = null; // Remove item
-       _currentBoostTime = _totalBoostDuration; // Start timer
+       _currentEffectTime = _totalEffectDuration;
+       _activeEffectType = _itemOnGroundType;
+       _effectOwner = playerIdx;
+       _itemOnGroundType = 0;
        
-       if (playerIdx == 1) {
-         _isBoosted1 = true;
-         _vel1 *= 2.0;
-         ScaffoldMessenger.of(context).showSnackBar(
-           const SnackBar(content: Text("Team 1 Boosted!"), duration: Duration(seconds: 1), backgroundColor: Colors.cyanAccent),
-         );
-       } else {
-         _isBoosted2 = true;
-         _vel2 *= 2.0;
-         ScaffoldMessenger.of(context).showSnackBar(
-           const SnackBar(content: Text("Team 2 Boosted!"), duration: Duration(seconds: 1), backgroundColor: Colors.redAccent),
-         );
+       String typeName = _activeEffectType == 1 ? "Speed" : "Sword";
+       Color color = playerIdx == 1 ? Colors.cyanAccent : Colors.redAccent;
+
+       if (_activeEffectType == 1) {
+          // Double speed immediately for physics kick
+          if (playerIdx == 1) _vel1 *= 2.0;
+          else _vel2 *= 2.0;
        }
-       // Do NOT schedule next power up yet. Wait for duration to end.
+       
+       ScaffoldMessenger.of(context).showSnackBar(
+         SnackBar(
+            content: Text("Team $playerIdx Got $typeName!"), 
+            duration: const Duration(seconds: 1), 
+            backgroundColor: color
+         ),
+       );
      });
   }
 
@@ -245,6 +274,15 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
 
       // Do not resolve if velocities are separating
       if (velAlongNormal > 0) return;
+
+      // Damage Logic (Sword)
+      if (_activeEffectType == 2) { // Sword Active
+         if (_effectOwner == 1) {
+            _hp2 = max(0, _hp2 - 10); // Player 1 hits Player 2
+         } else if (_effectOwner == 2) {
+            _hp1 = max(0, _hp1 - 10); // Player 2 hits Player 1
+         }
+      }
 
       // Restitution (bounciness)
       double e = 1.0; 
@@ -343,12 +381,12 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
                             left: _powerUpPos!.dx,
                             top: _powerUpPos!.dy,
                             child: Icon(
-                                Icons.bolt,
-                                color: Colors.yellow,
+                                _itemOnGroundType == 2 ? Icons.catching_pokemon : Icons.bolt, // Use sword-like icon
+                                color: _itemOnGroundType == 2 ? Colors.orangeAccent : Colors.yellow,
                                 size: _powerUpSize,
                                 shadows: [
                                     BoxShadow(
-                                        color: Colors.yellowAccent.withOpacity(0.8),
+                                        color: (_itemOnGroundType == 2 ? Colors.orange : Colors.yellowAccent).withOpacity(0.8),
                                         blurRadius: 10,
                                         spreadRadius: 2,
                                     )
@@ -364,13 +402,14 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
                         width: _playerSize,
                         height: _playerSize,
                         decoration: BoxDecoration(
-                          color: _isBoosted1 ? Colors.white : Colors.cyanAccent, // Flash white if boosted
+                          // Flash white if ANY effect (Speed or Sword) is active for this player
+                          color: (_activeEffectType != 0 && _effectOwner == 1) ? Colors.white : Colors.cyanAccent, 
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: (_isBoosted1 ? Colors.white : Colors.cyanAccent).withOpacity(0.6),
+                              color: ((_activeEffectType != 0 && _effectOwner == 1) ? Colors.white : Colors.cyanAccent).withOpacity(0.6),
                               blurRadius: 15,
-                              spreadRadius: _isBoosted1 ? 6 : 2, // Larger glow if boosted
+                              spreadRadius: (_activeEffectType != 0 && _effectOwner == 1) ? 6 : 2, 
                             ),
                           ],
                           border: Border.all(
@@ -388,13 +427,13 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
                         width: _playerSize,
                         height: _playerSize,
                         decoration: BoxDecoration(
-                          color: _isBoosted2 ? Colors.white : Colors.redAccent,
+                          color: (_activeEffectType != 0 && _effectOwner == 2) ? Colors.white : Colors.redAccent,
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: (_isBoosted2 ? Colors.white : Colors.redAccent).withOpacity(0.6),
+                              color: ((_activeEffectType != 0 && _effectOwner == 2) ? Colors.white : Colors.redAccent).withOpacity(0.6),
                               blurRadius: 15,
-                              spreadRadius: _isBoosted2 ? 6 : 2,
+                              spreadRadius: (_activeEffectType != 0 && _effectOwner == 2) ? 6 : 2,
                             ),
                           ],
                           border: Border.all(
@@ -424,7 +463,7 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
                         widget.team1, 
                         Colors.cyanAccent, 
                         Alignment.centerLeft,
-                        _isBoosted1,
+                        1, // Owner ID
                       ),
                     ),
                     const SizedBox(width: 20), // Spacer
@@ -435,7 +474,7 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
                         widget.team2, 
                         Colors.redAccent, 
                         Alignment.centerRight,
-                        _isBoosted2,
+                        2, // Owner ID
                       ),
                     ),
                   ],
@@ -453,8 +492,15 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
     String teamName, 
     Color color, 
     Alignment alignment,
-    bool isBoosted,
+    int ownerId,
   ) {
+    // Check Statuses
+    bool hasSpeed = (_activeEffectType == 1 && _effectOwner == ownerId);
+    bool hasSword = (_activeEffectType == 2 && _effectOwner == ownerId);
+    
+    // Progress for bars
+    double progress = (_currentEffectTime / _totalEffectDuration);
+    int hp = ownerId == 1 ? _hp1 : _hp2;
     return Column(
       crossAxisAlignment: alignment == Alignment.centerLeft 
           ? CrossAxisAlignment.start 
@@ -473,52 +519,77 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
           overflow: TextOverflow.ellipsis,
         ),
         
-        // Boost Info Row (Always Visible)
+        // 1. Speed Info Row
         Padding(
           padding: const EdgeInsets.only(top: 4.0),
           child: Row(
              mainAxisSize: MainAxisSize.min,
-             // Align row content to match column alignment
              mainAxisAlignment: alignment == Alignment.centerLeft 
                 ? MainAxisAlignment.start 
                 : MainAxisAlignment.end,
              children: [
-               // Left Alignment Layout: Icon -> Bar
                if (alignment == Alignment.centerLeft) ...[
-                 Icon(
-                   Icons.bolt,
-                   color: isBoosted ? Colors.yellowAccent : Colors.white24,
-                   size: 16,
-                 ),
+                 Icon(Icons.bolt, color: hasSpeed ? Colors.yellowAccent : Colors.white24, size: 16),
                  const SizedBox(width: 4),
-                 SizedBox(
-                   width: 120, // Slightly smaller to fit icon
-                   child: LinearProgressIndicator(
-                     value: isBoosted ? (_currentBoostTime / _totalBoostDuration) : 0.0,
-                     backgroundColor: Colors.white10,
-                     color: isBoosted ? Colors.yellowAccent : Colors.grey, 
-                     minHeight: 4,
-                     borderRadius: BorderRadius.circular(2),
-                   ),
-                 ),
-               ] else ...[
-                 // Right Alignment Layout: Bar -> Icon
                  SizedBox(
                    width: 120,
                    child: LinearProgressIndicator(
-                     value: isBoosted ? (_currentBoostTime / _totalBoostDuration) : 0.0,
+                     value: hasSpeed ? progress : 0.0,
                      backgroundColor: Colors.white10,
-                     color: isBoosted ? Colors.yellowAccent : Colors.grey, 
-                     minHeight: 4,
-                     borderRadius: BorderRadius.circular(2),
+                     color: hasSpeed ? Colors.yellowAccent : Colors.grey, 
+                     minHeight: 4, borderRadius: BorderRadius.circular(2),
+                   ),
+                 ),
+               ] else ...[
+                 SizedBox(
+                   width: 120,
+                   child: LinearProgressIndicator(
+                     value: hasSpeed ? progress : 0.0,
+                     backgroundColor: Colors.white10,
+                     color: hasSpeed ? Colors.yellowAccent : Colors.grey, 
+                     minHeight: 4, borderRadius: BorderRadius.circular(2),
                    ),
                  ),
                  const SizedBox(width: 4),
-                 Icon(
-                   Icons.bolt,
-                   color: isBoosted ? Colors.yellowAccent : Colors.white24,
-                   size: 16,
+                 Icon(Icons.bolt, color: hasSpeed ? Colors.yellowAccent : Colors.white24, size: 16),
+               ],
+             ],
+          ),
+        ),
+
+        // 2. Sword Info Row
+        Padding(
+          padding: const EdgeInsets.only(top: 4.0),
+          child: Row(
+             mainAxisSize: MainAxisSize.min,
+             mainAxisAlignment: alignment == Alignment.centerLeft 
+                ? MainAxisAlignment.start 
+                : MainAxisAlignment.end,
+             children: [
+               if (alignment == Alignment.centerLeft) ...[
+                 Icon(Icons.catching_pokemon, color: hasSword ? Colors.orangeAccent : Colors.white24, size: 16),
+                 const SizedBox(width: 4),
+                 SizedBox(
+                   width: 120,
+                   child: LinearProgressIndicator(
+                     value: hasSword ? progress : 0.0,
+                     backgroundColor: Colors.white10,
+                     color: hasSword ? Colors.orangeAccent : Colors.grey, 
+                     minHeight: 4, borderRadius: BorderRadius.circular(2),
+                   ),
                  ),
+               ] else ...[
+                 SizedBox(
+                   width: 120,
+                   child: LinearProgressIndicator(
+                     value: hasSword ? progress : 0.0,
+                     backgroundColor: Colors.white10,
+                     color: hasSword ? Colors.orangeAccent : Colors.grey, 
+                     minHeight: 4, borderRadius: BorderRadius.circular(2),
+                   ),
+                 ),
+                 const SizedBox(width: 4),
+                 Icon(Icons.catching_pokemon, color: hasSword ? Colors.orangeAccent : Colors.white24, size: 16),
                ],
              ],
           ),
@@ -538,7 +609,7 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
             alignment: alignment == Alignment.centerLeft 
               ? Alignment.centerLeft 
               : Alignment.centerRight,
-            widthFactor: 1.0, // Full HP for now
+          widthFactor: hp / 100.0, // Dynamic HP
             child: Container(
               decoration: BoxDecoration(
                 color: color,
@@ -556,7 +627,7 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
         const SizedBox(height: 4),
         // HP Text
         Text(
-          "HP 100/100",
+          "HP $hp/100",
           style: TextStyle(
             color: Colors.white70,
             fontSize: 12,
