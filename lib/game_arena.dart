@@ -280,8 +280,16 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
       if (_activeEffectType == 2) { // Sword Active
          if (_effectOwner == 1) {
             _hp2 = max(0, _hp2 - 10); // Player 1 hits Player 2
+            if (_hp2 == 0) {
+               _handleGameOver(1);
+               return; // Stop processing collision physics if game over
+            }
          } else if (_effectOwner == 2) {
             _hp1 = max(0, _hp1 - 10); // Player 2 hits Player 1
+             if (_hp1 == 0) {
+               _handleGameOver(2);
+               return;
+            }
          }
       }
 
@@ -322,6 +330,63 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
     _vel2 = Offset(cos(angle2), sin(angle2)) * initialSpeed;
     
     _initialized = true;
+  }
+
+  void _handleGameOver(int winnerIdx) {
+    String winnerName = winnerIdx == 1 ? widget.team1 : widget.team2;
+    Color winnerColor = winnerIdx == 1 ? Colors.cyanAccent : Colors.redAccent;
+    
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.black87,
+        shape: RoundedRectangleBorder(
+            side: BorderSide(color: winnerColor, width: 3),
+            borderRadius: BorderRadius.circular(20)
+        ),
+        title: const Center(child: Text("GAME OVER", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+        content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+                Icon(Icons.emoji_events, color: winnerColor, size: 60),
+                const SizedBox(height: 20),
+                Text("$winnerName WINS!", style: TextStyle(color: winnerColor, fontSize: 24, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+            ]
+        ),
+        actions: [
+            TextButton(
+                onPressed: () {
+                    Navigator.of(context).pop(); // Close dialog
+                    Navigator.of(context).pop(); // Go back to home
+                },
+                child: const Text("BACK TO HOME", style: TextStyle(color: Colors.white))
+            ),
+             TextButton(
+                onPressed: () {
+                    Navigator.of(context).pop(); // Close dialog
+                    _resetGame();
+                },
+                child: Text("RESTART", style: TextStyle(color: winnerColor))
+            )
+        ]
+      ),
+    );
+  }
+
+  void _resetGame() {
+    setState(() {
+        _hp1 = 100;
+        _hp2 = 100;
+        
+        _activeEffectType = 0;
+        _currentEffectTime = 0;
+        _powerUpPos = null;
+        
+        // Re-initialize positions and velocities
+        _initializePositions(_arenaSize);
+        _scheduleNextPowerUp();
+    });
   }
 
   @override
