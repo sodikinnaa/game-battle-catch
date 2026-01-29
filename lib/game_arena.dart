@@ -22,7 +22,6 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
   final double _boostedMaxSpeed = 16.0;
   
   // PowerUp State
-  Offset? _powerUpPos;
   final double _powerUpSize = 40.0;
   Timer? _powerUpSpawnTimer;
   
@@ -38,7 +37,7 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
 
   // PowerUp/Effect State
   // Type: 0 = None, 1 = Speed (Bolt), 2 = Sword (Attack)
-  int _itemOnGroundType = 0; 
+  List<Map<String, dynamic>> _spawnedItems = []; // [{'pos': Offset, 'type': int}]
   int _activeEffectType = 0;
   int _effectOwner = 0; // 1 or 2
   
@@ -74,21 +73,35 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
         return;
     }
 
-    // Only spawn if NO effect is currently active
-    if (_currentEffectTime > 0) {
+    // Only spawn if NO effect is currently active AND no items are on ground
+    if (_currentEffectTime > 0 || _spawnedItems.isNotEmpty) {
       _scheduleNextPowerUp();
       return;
     }
     
     setState(() {
+      double rand = _random.nextDouble();
+      
+      // Scenario: "di salah satunya petir dan pedang keluar berbarengan"
+      // Let's give ~20% chance for Dual Spawn
+      if (rand < 0.20) {
+          // Spawn Both
+          _spawnItem(1); // Lightning
+          _spawnItem(2); // Sword
+      } else {
+          // Single Spawn
+          // Ratio "petir dan pedang 2:1" -> Lightning (1) is 1/3 (~0.33), Sword (2) is 2/3 (~0.66)
+          // "Sword 2x more often than Bolt"
+          int type = _random.nextDouble() < 0.33 ? 1 : 2;
+          _spawnItem(type);
+      }
+    });
+  }
+  
+  void _spawnItem(int type) {
       double x = _random.nextDouble() * (_arenaSize.width - _powerUpSize);
       double y = _random.nextDouble() * (_arenaSize.height - _powerUpSize);
-      _powerUpPos = Offset(x, y);
-      
-      // Randomize Item Type (1: Speed, 2: Sword)
-      // "Sword 2x more often than Bolt" => 1/3 Chance for Bolt, 2/3 Chance for Sword
-      _itemOnGroundType = _random.nextDouble() < 0.33 ? 1 : 2; 
-    });
+      _spawnedItems.add({'pos': Offset(x, y), 'type': type});
   }
 
   void _tick(Duration elapsed) {
@@ -160,15 +173,31 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
   }
   
   void _checkPowerUpCollision() {
-    if (_powerUpPos == null) return;
+    if (_spawnedItems.isEmpty) return;
     
-    // Check Team 1
-    if (_checkCollision(_pos1, _playerSize, _powerUpPos!, _powerUpSize)) {
-        _activatePowerUp(1);
-    }
-    // Check Team 2
-    else if (_checkCollision(_pos2, _playerSize, _powerUpPos!, _powerUpSize)) {
-        _activatePowerUp(2);
+    // Iterate in reverse, though we will return on first pick anyway
+    for (int i = _spawnedItems.length - 1; i >= 0; i--) {
+        Map<String, dynamic> item = _spawnedItems[i];
+        Offset itemPos = item['pos'];
+        int itemType = item['type'];
+        
+        bool picked = false;
+        
+        // Check Team 1
+        if (_checkCollision(_pos1, _playerSize, itemPos, _powerUpSize)) {
+            _activatePowerUp(1, itemType);
+            picked = true;
+        }
+        // Check Team 2
+        else if (_checkCollision(_pos2, _playerSize, itemPos, _powerUpSize)) {
+            _activatePowerUp(2, itemType);
+            picked = true;
+        }
+        
+        if (picked) {
+             // _activatePowerUp clears the list, so we must stop processing
+             return; 
+        }
     }
   }
   
@@ -181,13 +210,11 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
     return distance < (s1/2 + s2/2);
   }
   
-  void _activatePowerUp(int playerIdx) {
+  void _activatePowerUp(int playerIdx, int type) {
      setState(() {
-       _powerUpPos = null; // Remove item
        _currentEffectTime = _totalEffectDuration;
-       _activeEffectType = _itemOnGroundType;
+       _activeEffectType = type;
        _effectOwner = playerIdx;
-       _itemOnGroundType = 0;
        
        String typeName = _activeEffectType == 1 ? "Speed" : "Sword";
        Color color = playerIdx == 1 ? Colors.cyanAccent : Colors.redAccent;
@@ -205,6 +232,17 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
             backgroundColor: color
          ),
        );
+       
+       // Clear remaining items if one effect is activated? 
+       // User usually expects power ups to be race. 
+       // If one is picked, usually the "Turn" ends or phase changes.
+       // But if "Both spawn", maybe player 2 can pick the other?
+       // Let's decide: If an effect is active, we usually block spawning. 
+       // If we let Player 2 pick the other item, we have 2 Active Boosts?
+       // Current architecture uses `_activeEffectType` (Single variable).
+       // It cannot support 2 active effects at once efficiently without significant refactor.
+       // So, if one is picked, we should probably clear the board to prevent bugs or state overwrites.
+       _spawnedItems.clear();
      });
   }
 
@@ -381,7 +419,7 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
         
         _activeEffectType = 0;
         _currentEffectTime = 0;
-        _powerUpPos = null;
+        _spawnedItems.clear();
         
         // Re-initialize positions and velocities
         _initializePositions(_arenaSize);
@@ -441,24 +479,27 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
                 ),
                 child: Stack(
                   children: [
-                    // Power Up Item
-                    if (_powerUpPos != null)
-                        Positioned(
-                            left: _powerUpPos!.dx,
-                            top: _powerUpPos!.dy,
+                    // Power Up Items
+                    ..._spawnedItems.map((item) {
+                       int type = item['type'];
+                       Offset pos = item['pos'];
+                       return Positioned(
+                            left: pos.dx,
+                            top: pos.dy,
                             child: Icon(
-                                _itemOnGroundType == 2 ? Icons.catching_pokemon : Icons.bolt, // Use sword-like icon
-                                color: _itemOnGroundType == 2 ? Colors.orangeAccent : Colors.yellow,
+                                type == 2 ? Icons.catching_pokemon : Icons.bolt,
+                                color: type == 2 ? Colors.orangeAccent : Colors.yellow,
                                 size: _powerUpSize,
                                 shadows: [
                                     BoxShadow(
-                                        color: (_itemOnGroundType == 2 ? Colors.orange : Colors.yellowAccent).withOpacity(0.8),
+                                        color: (type == 2 ? Colors.orange : Colors.yellowAccent).withOpacity(0.8),
                                         blurRadius: 10,
                                         spreadRadius: 2,
                                     )
                                 ],
                             ),
-                        ),
+                        );
+                    }),
                         
                     // Team 1 Player (Left - Cyan)
                     Positioned(
