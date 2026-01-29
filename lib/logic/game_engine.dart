@@ -166,18 +166,29 @@ class GameEngine {
       if (velAlongNormal > 0) return;
 
       // Damage (Check Shield!)
+      // Damage (Check Shield!)
       // P1 attacks P2
       if (swordTime1 > 0 && shieldTime2 <= 0) {
          hp2 = max(0, hp2 - GameConfig.damage);
-         if (hp2 == 0) onGameOver?.call(1);
       }
       
       // P2 attacks P1
       if (swordTime2 > 0 && shieldTime1 <= 0) {
          hp1 = max(0, hp1 - GameConfig.damage);
-         if (hp1 == 0) onGameOver?.call(2);
       }
-      if (hp1 == 0 || hp2 == 0) return;
+
+      // Check Game Over
+      if (hp1 <= 0 && hp2 <= 0) {
+          // Draw / Mutual Destruction - Extend Game slightly
+          hp1 = 10;
+          hp2 = 10;
+      } else if (hp2 <= 0) {
+          onGameOver?.call(1);
+          return;
+      } else if (hp1 <= 0) {
+          onGameOver?.call(2);
+          return;
+      }
 
       double j = -(1 + 1.0) * velAlongNormal; // e=1.0
       j /= 2;
@@ -203,10 +214,19 @@ class GameEngine {
         bool picked = false;
         int picker = 0;
         
-        if (_checkCollision(pos1, GameConfig.playerSize, itemPos, GameConfig.powerUpSize)) {
+        bool collides1 = _checkCollision(pos1, GameConfig.playerSize, itemPos, GameConfig.powerUpSize);
+        bool collides2 = _checkCollision(pos2, GameConfig.playerSize, itemPos, GameConfig.powerUpSize);
+        
+        if (collides1 && collides2) {
+            // Give to closer player
+            double d1 = (pos1 - itemPos).distanceSquared;
+            double d2 = (pos2 - itemPos).distanceSquared;
+            picker = d1 < d2 ? 1 : 2;
+            picked = true;
+        } else if (collides1) {
             picker = 1;
             picked = true;
-        } else if (_checkCollision(pos2, GameConfig.playerSize, itemPos, GameConfig.powerUpSize)) {
+        } else if (collides2) {
             picker = 2;
             picked = true;
         }

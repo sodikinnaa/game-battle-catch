@@ -128,11 +128,12 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Calculate arena size - make it taller (rectangular)
-        // Width is based on screen constraints
-        final double arenaWidth = min(constraints.maxWidth * 0.9, constraints.maxHeight * 0.45);
-        // Height is 1.3x the width for a taller arena
-        final double arenaHeight = arenaWidth * 1.3;
+        // Calculate square size (1:1 ratio)
+        // We use a smaller factor of height to ensure plenty of room for the stats below
+        final double sideLength = min(constraints.maxWidth * 0.9, constraints.maxHeight * 0.55);
+        
+        final arenaWidth = sideLength;
+        final arenaHeight = sideLength;
         final currentSize = Size(arenaWidth, arenaHeight);
 
         // Initialize or Update size
