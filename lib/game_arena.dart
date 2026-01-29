@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'game_config.dart';
+import 'logic/game_engine.dart';
 
 class GameArena extends StatefulWidget {
   final String team1;
@@ -16,43 +18,30 @@ class GameArena extends StatefulWidget {
 class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMixin {
   late Ticker _ticker;
   Size _arenaSize = Size.zero;
-  final double _playerSize = 50.0;
-  final double _minSpeed = 2.0;
-  final double _baseMaxSpeed = 8.0;
-  final double _boostedMaxSpeed = 16.0;
+  final GameEngine _engine = GameEngine();
   
-  // PowerUp State
-  final double _powerUpSize = 40.0;
   Timer? _powerUpSpawnTimer;
-  
-  // State for Player 1 (Team 1 - Cyan)
-  Offset _pos1 = Offset.zero;
-  Offset _vel1 = const Offset(3, 3);
-  int _hp1 = 100;
-
-  // State for Player 2 (Team 2 - Red)
-  Offset _pos2 = Offset.zero;
-  Offset _vel2 = const Offset(-3, 2);
-  int _hp2 = 100;
-
-  // PowerUp/Effect State
-  List<Map<String, dynamic>> _spawnedItems = []; 
-  
-  // Independent Effect Timers (Seconds)
-  double _speedTime1 = 0.0;
-  double _swordTime1 = 0.0;
-  double _speedTime2 = 0.0;
-  double _swordTime2 = 0.0;
-  
-  final double _totalEffectDuration = 5.0; // Seconds
-
   bool _initialized = false;
-  final Random _random = Random();
 
   @override
   void initState() {
     super.initState();
     _ticker = createTicker(_tick)..start();
+    
+    // Setup Callbacks
+    _engine.onGameOver = _handleGameOver;
+    _engine.onPowerUpCollected = (team, type) {
+       String typeName = type == 1 ? "Speed" : type == 2 ? "Sword" : "Shield";
+       Color color = team == 1 ? Colors.cyanAccent : Colors.redAccent;
+       ScaffoldMessenger.of(context).showSnackBar(
+         SnackBar(
+            content: Text("Team $team Got $typeName!"), 
+            duration: const Duration(seconds: 1), 
+            backgroundColor: color
+         ),
+       );
+    };
+
     _scheduleNextPowerUp();
   }
 
@@ -64,288 +53,26 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
   }
   
   void _scheduleNextPowerUp() {
-    // Random interval between 5 and 10 seconds
-    int duration = 5 + _random.nextInt(6); 
+    // Random interval between Min and Max
+    int range = GameConfig.maxSpawnTime - GameConfig.minSpawnTime;
+    int duration = GameConfig.minSpawnTime + Random().nextInt(range + 1); 
     _powerUpSpawnTimer = Timer(Duration(seconds: duration), _spawnPowerUp);
   }
   
   void _spawnPowerUp() {
-    if (_arenaSize == Size.zero) {
-        _scheduleNextPowerUp();
-        return;
-    }
-
-    // Only spawn if no items are currently on ground (wait for clear board)
-    // We NO LONGER check for active effects, allowing overlapping skills.
-    if (_spawnedItems.isNotEmpty) {
-      _scheduleNextPowerUp();
-      return;
-    }
-    
     setState(() {
-      double rand = _random.nextDouble();
-      
-      // Scenario: "di salah satunya petir dan pedang keluar berbarengan"
-      // Let's give ~20% chance for Dual Spawn
-      if (rand < 0.20) {
-          // Spawn Both
-          _spawnItem(1); // Lightning
-          _spawnItem(2); // Sword
-      } else {
-          // Single Spawn
-          // Ratio "petir dan pedang 2:1" -> Lightning (1) is 1/3 (~0.33), Sword (2) is 2/3 (~0.66)
-          // "Sword 2x more often than Bolt"
-          int type = _random.nextDouble() < 0.33 ? 1 : 2;
-          _spawnItem(type);
-      }
+       _engine.spawnPowerUp();
     });
-  }
-  
-  void _spawnItem(int type) {
-      double x = _random.nextDouble() * (_arenaSize.width - _powerUpSize);
-      double y = _random.nextDouble() * (_arenaSize.height - _powerUpSize);
-      _spawnedItems.add({'pos': Offset(x, y), 'type': type});
+    _scheduleNextPowerUp();
   }
 
   void _tick(Duration elapsed) {
     if (!_initialized || _arenaSize == Size.zero) return;
     
-    // Check Game Over
-    if (_hp1 <= 0 || _hp2 <= 0) return;
-
     setState(() {
-      // Update Effect Timers
-      if (_speedTime1 > 0) _speedTime1 = max(0, _speedTime1 - 0.016);
-      if (_swordTime1 > 0) _swordTime1 = max(0, _swordTime1 - 0.016);
-      if (_speedTime2 > 0) _speedTime2 = max(0, _speedTime2 - 0.016);
-      if (_swordTime2 > 0) _swordTime2 = max(0, _swordTime2 - 0.016);
-      
-      // Schedule next item if board empty (handled by timer, but ensure logic consistency)
-      
-      _updatePhysics();
+        // Approximate dt (16ms)
+        _engine.update(0.016);
     });
-  }
-
-  void _updatePhysics() {
-    // 1. Update Positions
-    _pos1 += _vel1;
-    _pos2 += _vel2;
-
-    // 2. Boundary Checks (Bounce with walls)
-    _checkWallCollision(1);
-    _checkWallCollision(2);
-
-    // 3. Player-to-Player Collision
-    _checkPlayerCollision();
-
-    // 4. PowerUp Collision
-    _checkPowerUpCollision();
-
-    // 5. Clamp Velocities 
-    // Speed boost active if speed timer > 0
-    _vel1 = _clampVelocity(_vel1, _speedTime1 > 0);
-    _vel2 = _clampVelocity(_vel2, _speedTime2 > 0);
-  }
-
-  Offset _clampVelocity(Offset vel, bool isBoosted) {
-    double speed = vel.distance;
-    double currentMax = isBoosted ? _boostedMaxSpeed : _baseMaxSpeed;
-    
-    if (speed < _minSpeed) {
-      if (speed == 0) return Offset(_minSpeed, 0); // Safety for 0
-      return vel * (_minSpeed / speed);
-    } else if (speed > currentMax) {
-      return vel * (currentMax / speed);
-    }
-    return vel;
-  }
-  
-  void _checkPowerUpCollision() {
-    if (_spawnedItems.isEmpty) return;
-    
-    // Iterate in reverse, though we will return on first pick anyway
-    for (int i = _spawnedItems.length - 1; i >= 0; i--) {
-        Map<String, dynamic> item = _spawnedItems[i];
-        Offset itemPos = item['pos'];
-        int itemType = item['type'];
-        
-        bool picked = false;
-        
-        // Check Team 1
-        if (_checkCollision(_pos1, _playerSize, itemPos, _powerUpSize)) {
-            _activatePowerUp(1, itemType);
-            picked = true;
-        }
-        // Check Team 2
-        else if (_checkCollision(_pos2, _playerSize, itemPos, _powerUpSize)) {
-            _activatePowerUp(2, itemType);
-            picked = true;
-        }
-        
-        if (picked) {
-             // _activatePowerUp clears the list, so we must stop processing
-             return; 
-        }
-    }
-  }
-  
-  bool _checkCollision(Offset p1, double s1, Offset p2, double s2) {
-    // Simple AABB or Circle collision
-    // Let's use Circle collision approximation for smoother feel
-    Offset c1 = p1 + Offset(s1/2, s1/2);
-    Offset c2 = p2 + Offset(s2/2, s2/2);
-    double distance = (c1 - c2).distance;
-    return distance < (s1/2 + s2/2);
-  }
-  
-  void _activatePowerUp(int playerIdx, int type) {
-     setState(() {
-       String typeName = type == 1 ? "Speed" : "Sword";
-       Color color = playerIdx == 1 ? Colors.cyanAccent : Colors.redAccent;
-
-       if (type == 1) { // Speed
-          if (playerIdx == 1) {
-             if (_speedTime1 <= 0) _vel1 *= 2.0; // Only kick speed if not already boosted
-             _speedTime1 = _totalEffectDuration;
-          } else {
-             if (_speedTime2 <= 0) _vel2 *= 2.0;
-             _speedTime2 = _totalEffectDuration;
-          }
-       } else { // Sword
-          if (playerIdx == 1) _swordTime1 = _totalEffectDuration;
-          else _swordTime2 = _totalEffectDuration;
-       }
-       
-       ScaffoldMessenger.of(context).showSnackBar(
-         SnackBar(
-            content: Text("Team $playerIdx Got $typeName!"), 
-            duration: const Duration(seconds: 1), 
-            backgroundColor: color
-         ),
-       );
-       
-       // Do not clear _spawnedItems here. Handled by collision loop.
-       _scheduleNextPowerUp(); // Ensure cycle continues
-     });
-  }
-
-  void _checkWallCollision(int playerIdx) {
-    Offset pos = playerIdx == 1 ? _pos1 : _pos2;
-    Offset vel = playerIdx == 1 ? _vel1 : _vel2;
-    
-    // Check Left/Right
-    if (pos.dx <= 0) {
-      pos = Offset(0, pos.dy);
-      vel = Offset(-vel.dx, vel.dy);
-    } else if (pos.dx >= _arenaSize.width - _playerSize) {
-      pos = Offset(_arenaSize.width - _playerSize, pos.dy);
-      vel = Offset(-vel.dx, vel.dy);
-    }
-
-    // Check Top/Bottom
-    if (pos.dy <= 0) {
-      pos = Offset(pos.dx, 0);
-      vel = Offset(vel.dx, -vel.dy);
-    } else if (pos.dy >= _arenaSize.height - _playerSize) {
-      pos = Offset(pos.dx, _arenaSize.height - _playerSize);
-      vel = Offset(vel.dx, -vel.dy);
-    }
-
-    // Apply back
-    if (playerIdx == 1) {
-      _pos1 = pos;
-      _vel1 = vel;
-    } else {
-      _pos2 = pos;
-      _vel2 = vel;
-    }
-  }
-
-  void _checkPlayerCollision() {
-    // Center points
-    Offset c1 = _pos1 + Offset(_playerSize / 2, _playerSize / 2);
-    Offset c2 = _pos2 + Offset(_playerSize / 2, _playerSize / 2);
-
-    double dx = c2.dx - c1.dx;
-    double dy = c2.dy - c1.dy;
-    double distance = sqrt(dx * dx + dy * dy);
-
-    // If collision (distance < sum of radii)
-    if (distance < _playerSize) {
-      // Calculate collision normal
-      double nx = dx / distance;
-      double ny = dy / distance;
-
-      // Separation (prevent sticking)
-      double overlap = _playerSize - distance;
-      Offset separation = Offset(nx, ny) * (overlap / 2);
-      
-      _pos1 -= separation;
-      _pos2 += separation;
-
-      // Reflect velocities (Simple elastic collision assumption)
-      // v1' = v1 - 2 * (v1 . n) * n
-      // But simpler for equal mass: just swap momentum along normal or reflect?
-      // Let's use standard reflection logic
-      
-      // Relative velocity
-      Offset rv = _vel2 - _vel1;
-      
-      // Velocity along normal
-      double velAlongNormal = rv.dx * nx + rv.dy * ny;
-
-      // Do not resolve if velocities are separating
-      if (velAlongNormal > 0) return;
-
-      // Damage Logic (Swords)
-      // Both can deal damage if both have swords!
-      if (_swordTime1 > 0) { // P1 hits P2
-         _hp2 = max(0, _hp2 - 10);
-         if (_hp2 == 0) { _handleGameOver(1); return; }
-      }
-      
-      if (_swordTime2 > 0) { // P2 hits P1
-         _hp1 = max(0, _hp1 - 10);
-         if (_hp1 == 0) { _handleGameOver(2); return; }
-      }
-
-      // Restitution (bounciness)
-      double e = 1.0; 
-
-      // Impulse scalar
-      double j = -(1 + e) * velAlongNormal;
-      j /= 2; // 1/mass1 + 1/mass2, assuming mass = 1
-
-      // Apply impulse
-      Offset impulse = Offset(nx * j, ny * j);
-      
-      _vel1 -= impulse;
-      _vel2 += impulse;
-      
-      // Add a bit of randomness to avoid infinite loops in same trajectory
-      _vel1 += Offset((_random.nextDouble() - 0.5) * 0.5, (_random.nextDouble() - 0.5) * 0.5);
-      _vel2 += Offset((_random.nextDouble() - 0.5) * 0.5, (_random.nextDouble() - 0.5) * 0.5);
-    }
-  }
-
-  void _initializePositions(Size size) {
-    _arenaSize = size;
-    // Initial Positions
-    _pos1 = Offset(40, size.height / 2 - _playerSize / 2);
-    _pos2 = Offset(size.width - 40 - _playerSize, size.height / 2 - _playerSize / 2);
-    
-    // Initial Velocities with Equal Speed
-    const double initialSpeed = 4.0;
-    
-    // Random angle for player 1
-    double angle1 = _random.nextDouble() * 2 * pi;
-    _vel1 = Offset(cos(angle1), sin(angle1)) * initialSpeed;
-
-    // Random angle for player 2
-    double angle2 = _random.nextDouble() * 2 * pi;
-    _vel2 = Offset(cos(angle2), sin(angle2)) * initialSpeed;
-    
-    _initialized = true;
   }
 
   void _handleGameOver(int winnerIdx) {
@@ -392,15 +119,7 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
 
   void _resetGame() {
     setState(() {
-        _hp1 = 100;
-        _hp2 = 100;
-        
-        _speedTime1 = 0; _swordTime1 = 0;
-        _speedTime2 = 0; _swordTime2 = 0;
-        _spawnedItems.clear();
-        
-        // Re-initialize positions and velocities
-        _initializePositions(_arenaSize);
+        _engine.initialize(_arenaSize);
         _scheduleNextPowerUp();
     });
   }
@@ -409,12 +128,11 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        // Calculate square size (1:1 ratio)
-        // We use a smaller factor of height to ensure plenty of room for the stats below
-        final double sideLength = min(constraints.maxWidth * 0.9, constraints.maxHeight * 0.55);
-        
-        final arenaWidth = sideLength;
-        final arenaHeight = sideLength;
+        // Calculate arena size - make it taller (rectangular)
+        // Width is based on screen constraints
+        final double arenaWidth = min(constraints.maxWidth * 0.9, constraints.maxHeight * 0.45);
+        // Height is 1.3x the width for a taller arena
+        final double arenaHeight = arenaWidth * 1.3;
         final currentSize = Size(arenaWidth, arenaHeight);
 
         // Initialize or Update size
@@ -423,12 +141,13 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
            // might be jarring during resize. For this simple app, we can just init if not set,
            // or update boundaries if set.
            if (!_initialized) {
-             _initializePositions(currentSize);
+             _engine.initialize(currentSize);
+             _arenaSize = currentSize;
+             _initialized = true;
            } else {
              _arenaSize = currentSize;
-             // Ensure they are inside
-             _pos1 = Offset(min(_pos1.dx, arenaWidth - _playerSize), min(_pos1.dy, arenaHeight - _playerSize));
-             _pos2 = Offset(min(_pos2.dx, arenaWidth - _playerSize), min(_pos2.dy, arenaHeight - _playerSize));
+             _engine.arenaSize = currentSize;
+             // _engine.initialize(currentSize); // Or a resize method if we want to smooth transition
            }
         }
 
@@ -458,19 +177,27 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
                 child: Stack(
                   children: [
                     // Power Up Items
-                    ..._spawnedItems.map((item) {
+                    ..._engine.spawnedItems.map((item) {
                        int type = item['type'];
                        Offset pos = item['pos'];
                        return Positioned(
                             left: pos.dx,
                             top: pos.dy,
                             child: Icon(
-                                type == 2 ? Icons.catching_pokemon : Icons.bolt,
-                                color: type == 2 ? Colors.orangeAccent : Colors.yellow,
-                                size: _powerUpSize,
+                                type == 1 ? Icons.bolt 
+                                : type == 2 ? Icons.catching_pokemon 
+                                : Icons.shield,
+                                
+                                color: type == 1 ? Colors.yellow 
+                                : type == 2 ? Colors.orangeAccent 
+                                : Colors.greenAccent,
+                                
+                                size: GameConfig.powerUpSize,
                                 shadows: [
                                     BoxShadow(
-                                        color: (type == 2 ? Colors.orange : Colors.yellowAccent).withOpacity(0.8),
+                                        color: (type == 1 ? Colors.yellowAccent 
+                                              : type == 2 ? Colors.orange 
+                                              : Colors.green).withOpacity(0.8),
                                         blurRadius: 10,
                                         spreadRadius: 2,
                                     )
@@ -481,49 +208,64 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
                         
                     // Team 1 Player (Left - Cyan)
                     Positioned(
-                      left: _pos1.dx,
-                      top: _pos1.dy,
+                      left: _engine.pos1.dx,
+                      top: _engine.pos1.dy,
                       child: Container(
-                        width: _playerSize,
-                        height: _playerSize,
+                        width: GameConfig.playerSize,
+                        height: GameConfig.playerSize,
                         decoration: BoxDecoration(
-                          // Flash white if ANY effect (Speed or Sword) is active for this player
-                          color: (_speedTime1 > 0 || _swordTime1 > 0) ? Colors.white : Colors.cyanAccent, 
+                          color: Colors.cyanAccent, // Always team color
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: ((_speedTime1 > 0 || _swordTime1 > 0) ? Colors.white : Colors.cyanAccent).withOpacity(0.6),
-                              blurRadius: 15,
-                              spreadRadius: (_speedTime1 > 0 || _swordTime1 > 0) ? 6 : 2, 
+                              color: (_engine.shieldTime1 > 0) ? Colors.greenAccent // Shield Priority
+                                   : (_engine.swordTime1 > 0 && _engine.speedTime1 > 0) ? Colors.white 
+                                   : (_engine.swordTime1 > 0) ? Colors.orangeAccent 
+                                   : (_engine.speedTime1 > 0) ? Colors.yellowAccent 
+                                   : Colors.cyanAccent.withOpacity(0.6), 
+                              blurRadius: (_engine.speedTime1 > 0 || _engine.swordTime1 > 0 || _engine.shieldTime1 > 0) ? 20 : 15,
+                              spreadRadius: (_engine.speedTime1 > 0 || _engine.swordTime1 > 0 || _engine.shieldTime1 > 0) ? 4 : 2, 
                             ),
                           ],
                           border: Border.all(
-                            color: Colors.white,
-                            width: 2,
+                            color: (_engine.shieldTime1 > 0) ? Colors.greenAccent
+                                 : (_engine.swordTime1 > 0 && _engine.speedTime1 > 0) ? Colors.white
+                                 : (_engine.swordTime1 > 0) ? Colors.orangeAccent
+                                 : (_engine.speedTime1 > 0) ? Colors.yellowAccent
+                                 : Colors.white,
+                            width: (_engine.speedTime1 > 0 || _engine.swordTime1 > 0 || _engine.shieldTime1 > 0) ? 4 : 2,
                           ),
                         ),
                       ),
                     ),
                     // Team 2 Player (Right - Red)
                     Positioned(
-                      left: _pos2.dx,
-                      top: _pos2.dy,
+                      left: _engine.pos2.dx,
+                      top: _engine.pos2.dy,
                       child: Container(
-                        width: _playerSize,
-                        height: _playerSize,
+                        width: GameConfig.playerSize,
+                        height: GameConfig.playerSize,
                         decoration: BoxDecoration(
-                          color: (_speedTime2 > 0 || _swordTime2 > 0) ? Colors.white : Colors.redAccent,
+                          color: Colors.redAccent, // Always team color
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: ((_speedTime2 > 0 || _swordTime2 > 0) ? Colors.white : Colors.redAccent).withOpacity(0.6),
-                              blurRadius: 15,
-                              spreadRadius: (_speedTime2 > 0 || _swordTime2 > 0) ? 6 : 2,
+                              color: (_engine.shieldTime2 > 0) ? Colors.greenAccent 
+                                   : (_engine.swordTime2 > 0 && _engine.speedTime2 > 0) ? Colors.white 
+                                   : (_engine.swordTime2 > 0) ? Colors.orangeAccent 
+                                   : (_engine.speedTime2 > 0) ? Colors.yellowAccent 
+                                   : Colors.redAccent.withOpacity(0.6), 
+                              blurRadius: (_engine.speedTime2 > 0 || _engine.swordTime2 > 0 || _engine.shieldTime2 > 0) ? 20 : 15,
+                              spreadRadius: (_engine.speedTime2 > 0 || _engine.swordTime2 > 0 || _engine.shieldTime2 > 0) ? 4 : 2,
                             ),
                           ],
                           border: Border.all(
-                            color: Colors.white,
-                            width: 2,
+                            color: (_engine.shieldTime2 > 0) ? Colors.greenAccent
+                                 : (_engine.swordTime2 > 0 && _engine.speedTime2 > 0) ? Colors.white
+                                 : (_engine.swordTime2 > 0) ? Colors.orangeAccent
+                                 : (_engine.speedTime2 > 0) ? Colors.yellowAccent
+                                 : Colors.white,
+                            width: (_engine.speedTime2 > 0 || _engine.swordTime2 > 0 || _engine.shieldTime2 > 0) ? 4 : 2,
                           ),
                         ),
                       ),
@@ -580,14 +322,16 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
     int ownerId,
   ) {
     // Check Statuses
-    bool hasSpeed = ownerId == 1 ? _speedTime1 > 0 : _speedTime2 > 0;
-    bool hasSword = ownerId == 1 ? _swordTime1 > 0 : _swordTime2 > 0;
+    bool hasSpeed = ownerId == 1 ? _engine.speedTime1 > 0 : _engine.speedTime2 > 0;
+    bool hasSword = ownerId == 1 ? _engine.swordTime1 > 0 : _engine.swordTime2 > 0;
+    bool hasShield = ownerId == 1 ? _engine.shieldTime1 > 0 : _engine.shieldTime2 > 0;
     
     // Progress for bars (Use specific timer)
-    double speedProgress = (ownerId == 1 ? _speedTime1 : _speedTime2) / _totalEffectDuration;
-    double swordProgress = (ownerId == 1 ? _swordTime1 : _swordTime2) / _totalEffectDuration;
+    double speedProgress = (ownerId == 1 ? _engine.speedTime1 : _engine.speedTime2) / GameConfig.totalEffectDuration;
+    double swordProgress = (ownerId == 1 ? _engine.swordTime1 : _engine.swordTime2) / GameConfig.totalEffectDuration;
+    double shieldProgress = (ownerId == 1 ? _engine.shieldTime1 : _engine.shieldTime2) / GameConfig.totalEffectDuration;
     
-    int hp = ownerId == 1 ? _hp1 : _hp2;
+    int hp = ownerId == 1 ? _engine.hp1 : _engine.hp2;
     return Column(
       crossAxisAlignment: alignment == Alignment.centerLeft 
           ? CrossAxisAlignment.start 
@@ -677,6 +421,44 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
                  ),
                  const SizedBox(width: 4),
                  Icon(Icons.catching_pokemon, color: hasSword ? Colors.orangeAccent : Colors.white24, size: 16),
+               ],
+             ],
+          ),
+        ),
+
+        // 3. Shield Info Row
+        Padding(
+          padding: const EdgeInsets.only(top: 4.0),
+          child: Row(
+             mainAxisSize: MainAxisSize.min,
+             mainAxisAlignment: alignment == Alignment.centerLeft 
+                ? MainAxisAlignment.start 
+                : MainAxisAlignment.end,
+             children: [
+               if (alignment == Alignment.centerLeft) ...[
+                 Icon(Icons.shield, color: hasShield ? Colors.greenAccent : Colors.white24, size: 16),
+                 const SizedBox(width: 4),
+                 SizedBox(
+                   width: 120,
+                   child: LinearProgressIndicator(
+                     value: hasShield ? shieldProgress : 0.0,
+                     backgroundColor: Colors.white10,
+                     color: hasShield ? Colors.greenAccent : Colors.grey, 
+                     minHeight: 4, borderRadius: BorderRadius.circular(2),
+                   ),
+                 ),
+               ] else ...[
+                 SizedBox(
+                   width: 120,
+                   child: LinearProgressIndicator(
+                     value: hasShield ? shieldProgress : 0.0,
+                     backgroundColor: Colors.white10,
+                     color: hasShield ? Colors.greenAccent : Colors.grey, 
+                     minHeight: 4, borderRadius: BorderRadius.circular(2),
+                   ),
+                 ),
+                 const SizedBox(width: 4),
+                 Icon(Icons.shield, color: hasShield ? Colors.greenAccent : Colors.white24, size: 16),
                ],
              ],
           ),

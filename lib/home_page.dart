@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'game_arena.dart';
+import 'game_config.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -9,24 +10,8 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  // List of European football clubs
-  final List<String> clubs = [
-    "Real Madrid",
-    "Barcelona",
-    "Manchester United",
-    "Liverpool",
-    "Manchester City",
-    "Arsenal",
-    "Chelsea",
-    "Bayern Munich",
-    "Borussia Dortmund",
-    "Paris Saint-Germain",
-    "Juventus",
-    "AC Milan",
-    "Inter Milan",
-    "Ajax",
-    "Atletico Madrid",
-  ];
+  // List of European football clubs from config
+  final List<String> clubs = GameConfig.clubs;
 
   String? selectedTeam1;
   String? selectedTeam2;
