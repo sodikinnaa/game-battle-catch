@@ -86,7 +86,8 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
       _powerUpPos = Offset(x, y);
       
       // Randomize Item Type (1: Speed, 2: Sword)
-      _itemOnGroundType = _random.nextBool() ? 1 : 2; 
+      // "Sword 2x more often than Bolt" => 1/3 Chance for Bolt, 2/3 Chance for Sword
+      _itemOnGroundType = _random.nextDouble() < 0.33 ? 1 : 2; 
     });
   }
 
