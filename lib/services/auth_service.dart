@@ -187,6 +187,37 @@ class AuthService {
     }
   }
 
+  // Get Teams
+  Future<List<dynamic>> getTeams() async {
+    final url = Uri.parse('$_baseUrl/teams');
+    final accessToken = await _storage.read(key: 'access_token');
+    
+    Map<String, String> headers = {
+      'Content-Type': 'application/json',
+    };
+    
+    // Add token if available
+    if (accessToken != null) {
+      headers['Authorization'] = 'Bearer $accessToken';
+    }
+
+    try {
+      final response = await http.get(
+        url,
+        headers: headers,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['teams'] ?? []; // Return the list of teams
+      } else {
+        throw Exception('Failed to load teams: ${response.body}');
+      }
+    } catch (e) {
+      rethrow;
+    }
+  }
+
   // Sign out
   Future<void> signOut() async {
     try {

@@ -8,8 +8,16 @@ import '../logic/game_engine.dart';
 class GameArena extends StatefulWidget {
   final String team1;
   final String team2;
+  final String? team1IconUrl;
+  final String? team2IconUrl;
 
-  const GameArena({super.key, required this.team1, required this.team2});
+  const GameArena({
+    super.key, 
+    required this.team1, 
+    required this.team2,
+    this.team1IconUrl,
+    this.team2IconUrl,
+  });
 
   @override
   State<GameArena> createState() => _GameArenaState();
@@ -149,24 +157,65 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // 0. Match Timer
-              Container(
-                margin: const EdgeInsets.only(bottom: 20),
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.white24),
-                ),
-                child: Text(
-                  "${(_engine.matchTime ~/ 60).toString().padLeft(2, '0')}:${(_engine.matchTime % 60).toInt().toString().padLeft(2, '0')}",
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
-                    fontFamily: 'Courier', // Monospace look
-                  ),
+              // 0. Header: Team 1 - Timer - Team 2
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Team 1 Name (Left)
+                    Expanded(
+                      child: Text(
+                        widget.team1,
+                        textAlign: TextAlign.left, // Changed to Left based on standard reading, or usually Team 1 (Home) is Left.
+                        style: const TextStyle(
+                          color: Colors.cyanAccent,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          shadows: [Shadow(color: Colors.cyanAccent, blurRadius: 10)],
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.visible,
+                      ),
+                    ),
+                    
+                    // Timer (Center)
+                    Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 10),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white24),
+                      ),
+                      child: Text(
+                        "${(_engine.matchTime ~/ 60).toString().padLeft(2, '0')}:${(_engine.matchTime % 60).toInt().toString().padLeft(2, '0')}",
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          fontFamily: 'Courier',
+                        ),
+                      ),
+                    ),
+
+                    // Team 2 Name (Right)
+                    Expanded(
+                      child: Text(
+                        widget.team2,
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(
+                          color: Colors.redAccent,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          shadows: [Shadow(color: Colors.redAccent, blurRadius: 10)],
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.visible,
+                      ),
+                    ),
+                  ],
                 ),
               ),
 
@@ -303,19 +352,6 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
           ? CrossAxisAlignment.start 
           : CrossAxisAlignment.end,
       children: [
-        // Team Name
-        Text(
-          teamName,
-          style: TextStyle(
-            color: color,
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.2,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        
         // 1. Speed Info Row
         Padding(
           padding: const EdgeInsets.only(top: 4.0),
@@ -535,25 +571,34 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
     return Positioned(
       left: pos.dx,
       top: pos.dy,
-      child: Container(
-        width: GameConfig.playerSize,
-        height: GameConfig.playerSize,
-        decoration: BoxDecoration(
-          color: baseColor, 
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: glowColor,
-              blurRadius: (hasSpeed || hasSword || hasShield) ? 20 : 15,
-              spreadRadius: (hasSpeed || hasSword || hasShield) ? 4 : 2, 
+        child: Container(
+          width: GameConfig.playerSize,
+          height: GameConfig.playerSize,
+          decoration: BoxDecoration(
+            color: baseColor, 
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: glowColor,
+                blurRadius: (hasSpeed || hasSword || hasShield) ? 20 : 15,
+                spreadRadius: (hasSpeed || hasSword || hasShield) ? 4 : 2, 
+              ),
+            ],
+            border: Border.all(
+              color: (hasShield || hasSword || hasSpeed) ? glowColor : Colors.white,
+              width: (hasSpeed || hasSword || hasShield) ? 4 : 2,
             ),
-          ],
-          border: Border.all(
-            color: (hasShield || hasSword || hasSpeed) ? glowColor : Colors.white,
-            width: (hasSpeed || hasSword || hasShield) ? 4 : 2,
           ),
+          child: (team == 1 ? widget.team1IconUrl : widget.team2IconUrl) != null
+              ? ClipOval(
+                  child: Image.network(
+                    (team == 1 ? widget.team1IconUrl! : widget.team2IconUrl!),
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) => const Icon(Icons.error, size: 20),
+                  ),
+                )
+              : null,
         ),
-      ),
     );
   }
 }

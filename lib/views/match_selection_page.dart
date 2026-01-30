@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'game_arena.dart';
+import '../services/auth_service.dart';
 import '../utils/game_config.dart';
 
 class MatchSelectionPage extends StatefulWidget {
@@ -10,11 +11,41 @@ class MatchSelectionPage extends StatefulWidget {
 }
 
 class _MatchSelectionPageState extends State<MatchSelectionPage> {
-  // List of European football clubs from config
-  final List<String> clubs = GameConfig.clubs;
+  List<Map<String, dynamic>> teams = [];
+  bool isLoading = true;
+  final AuthService _authService = AuthService();
 
   String? selectedTeam1;
   String? selectedTeam2;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTeams();
+  }
+
+  Future<void> _loadTeams() async {
+    try {
+      final teamsData = await _authService.getTeams();
+      
+      if (mounted) {
+        setState(() {
+          // Cast the list of dynamic to list of maps
+          teams = List<Map<String, dynamic>>.from(teamsData);
+          isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+           SnackBar(content: Text('Error loading teams: $e')),
+        );
+        setState(() {
+          isLoading = false;
+        });
+      }
+    }
+  }
 
   void _startGame() {
     if (selectedTeam1 != null && selectedTeam2 != null) {
@@ -27,6 +58,10 @@ class _MatchSelectionPageState extends State<MatchSelectionPage> {
         );
         return;
       }
+
+      // a. Find the full team objects
+      final team1Obj = teams.firstWhere((t) => t['name'] == selectedTeam1, orElse: () => {});
+      final team2Obj = teams.firstWhere((t) => t['name'] == selectedTeam2, orElse: () => {});
 
       Navigator.push(
         context,
@@ -41,6 +76,8 @@ class _MatchSelectionPageState extends State<MatchSelectionPage> {
             body: GameArena(
               team1: selectedTeam1!,
               team2: selectedTeam2!,
+              team1IconUrl: team1Obj['icon_url'],
+              team2IconUrl: team2Obj['icon_url'],
             ),
           ),
         ),
@@ -68,10 +105,12 @@ class _MatchSelectionPageState extends State<MatchSelectionPage> {
         ),
       ),
       body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
-            child: Column(
+        child: isLoading 
+          ? const Center(child: CircularProgressIndicator(color: Colors.cyanAccent))
+          : Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+                child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 // 1. Icon / Logo
@@ -126,17 +165,51 @@ class _MatchSelectionPageState extends State<MatchSelectionPage> {
                           });
                         },
                       ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        "VS",
-                        style: TextStyle(
-                          color: Colors.white30,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          fontStyle: FontStyle.italic,
-                        ),
+                      const SizedBox(height: 24),
+                      Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Divider(color: Colors.white.withOpacity(0.1), thickness: 2),
+                          Container(
+                            width: 60,
+                            height: 60,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1A1A2E), // Match background
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.cyanAccent.withOpacity(0.5), 
+                                width: 2
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.4),
+                                  blurRadius: 10,
+                                  spreadRadius: 2,
+                                ),
+                              ],
+                            ),
+                            child: Center(
+                              child: Text(
+                                "VS",
+                                style: TextStyle(
+                                  color: Colors.redAccent,
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.w900,
+                                  fontStyle: FontStyle.italic,
+                                  letterSpacing: 1.5,
+                                  shadows: [
+                                    Shadow(
+                                      color: Colors.redAccent.withOpacity(0.5),
+                                      blurRadius: 10,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 24),
                       _buildDropdown(
                         label: "Jagoan 2 (Tandang)",
                         value: selectedTeam2,
@@ -259,10 +332,23 @@ class _MatchSelectionPageState extends State<MatchSelectionPage> {
                 color: Colors.white,
                 fontSize: 16,
               ),
-              items: clubs.map((String club) {
+              items: teams.map((Map<String, dynamic> team) {
                 return DropdownMenuItem<String>(
-                  value: club,
-                  child: Text(club),
+                  value: team['name'],
+                  child: Row(
+                    children: [
+                      if (team['icon_url'] != null)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 12.0),
+                          child: CircleAvatar(
+                            radius: 12,
+                            backgroundImage: NetworkImage(team['icon_url']),
+                            backgroundColor: Colors.transparent,
+                          ),
+                        ),
+                      Text(team['name']),
+                    ],
+                  ),
                 );
               }).toList(),
               onChanged: onChanged,
