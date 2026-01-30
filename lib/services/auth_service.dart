@@ -218,6 +218,110 @@ class AuthService {
     }
   }
 
+  // Get Avatars
+  Future<List<dynamic>> getAvatars() async {
+    final url = Uri.parse('$_baseUrl/avatars');
+    try {
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['avatars'] ?? [];
+      } else {
+        throw Exception('Failed to load avatars: ${response.body}');
+      }
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  // Get User Team
+  Future<Map<String, dynamic>?> getUserTeam() async {
+    final url = Uri.parse('$_baseUrl/user/team');
+    final accessToken = await _storage.read(key: 'access_token');
+    if (accessToken == null) return null;
+
+    try {
+      final response = await http.get(
+        url,
+        headers: {
+          'Authorization': 'Bearer $accessToken',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['data']; // The response wrapper has 'data'
+      } else if (response.statusCode == 404) {
+        return null; // Not setup yet
+      } else {
+        // It might be that the user has no team, handle gracefully
+        return null;
+      }
+    } catch (e) {
+      print("Error fetching user team: $e");
+      return null;
+    }
+  }
+
+  // Save/Update User Team
+  Future<Map<String, dynamic>> saveUserTeam(String teamId, String avatarId, String customName) async {
+    final url = Uri.parse('$_baseUrl/user/team');
+    final accessToken = await _storage.read(key: 'access_token');
+    if (accessToken == null) throw Exception("No access token found");
+
+    try {
+      final response = await http.post(
+        url,
+        headers: {
+          'Authorization': 'Bearer $accessToken',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'team_id': teamId,
+          'avatar_id': avatarId,
+          'custom_name': customName,
+        }),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        return data['data'] ?? data;
+      } else {
+        throw Exception('Failed to save team: ${response.body}');
+      }
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  // Get Player Teams (Other users)
+  Future<List<dynamic>> getPlayerTeams() async {
+    final url = Uri.parse('$_baseUrl/user-teams');
+    final accessToken = await _storage.read(key: 'access_token');
+    
+    // Auth might be optional but recommended to filter out own team
+    Map<String, String> headers = {
+      'Content-Type': 'application/json',
+    };
+    if (accessToken != null) {
+      headers['Authorization'] = 'Bearer $accessToken';
+    }
+
+    try {
+      final response = await http.get(url, headers: headers);
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['data'] ?? [];
+      } else {
+        throw Exception('Failed to load player teams: ${response.body}');
+      }
+    } catch (e) {
+      print("Error fetching player teams: $e");
+      return []; // Return empty list on error to not break UI
+    }
+  }
+
   // Sign out
   Future<void> signOut() async {
     try {
