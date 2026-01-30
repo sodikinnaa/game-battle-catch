@@ -1,6 +1,6 @@
 import 'dart:math';
 import 'dart:ui';
-import '../game_config.dart';
+import '../utils/game_config.dart';
 import 'effect_manager.dart';
 import 'clone_manager.dart';
 
@@ -57,7 +57,12 @@ class GameEngine {
     speedTime1 = 0; swordTime1 = 0; shieldTime1 = 0; multiTime1 = 0;
     speedTime2 = 0; swordTime2 = 0; shieldTime2 = 0; multiTime2 = 0;
     spawnedItems.clear();
+    spawnedItems.clear();
     _clones.reset();
+    _clones.onDamage = (target, dmg) {
+        if (target == 1) hp1 = max(0, hp1 - dmg);
+        else hp2 = max(0, hp2 - dmg);
+    };
     
     // Initial Velocities
     double initialSpeed = 4.0;
@@ -96,10 +101,10 @@ class GameEngine {
     if (shieldTime2 > 0) shieldTime2 = max(0, shieldTime2 - dt);
     if (multiTime2 > 0) multiTime2 = max(0, multiTime2 - dt);
 
-    _updatePhysics();
+    _updatePhysics(dt);
   }
 
-  void _updatePhysics() {
+  void _updatePhysics(double dt) {
     // 1. Update Positions
     pos1 += vel1;
     pos2 += vel2;
@@ -119,60 +124,10 @@ class GameEngine {
     vel2 = _clampVelocity(vel2, speedTime2 > 0);
     
     // 6. Update Clones
-    _updateClones();
+    _clones.update(dt, arenaSize, pos1, pos2, swordTime1, swordTime2, shieldTime1, shieldTime2);
   }
   
-  void _updateClones() {
-    for (int i = clones.length - 1; i >= 0; i--) {
-       var clone = clones[i];
-       clone['life'] -= 0.016; // approx dt
-       if (clone['life'] <= 0) {
-           clones.removeAt(i);
-           continue;
-       }
-       
-       // Move
-       Offset pos = clone['pos'];
-       Offset vel = clone['vel'];
-       pos += vel;
-       
-       // Wall
-       if (pos.dx <= 0) { pos = Offset(0, pos.dy); vel = Offset(-vel.dx, vel.dy); }
-       else if (pos.dx >= arenaSize.width - 40) { pos = Offset(arenaSize.width - 40, pos.dy); vel = Offset(-vel.dx, vel.dy); }
-       
-       if (pos.dy <= 0) { pos = Offset(pos.dx, 0); vel = Offset(vel.dx, -vel.dy); }
-       else if (pos.dy >= arenaSize.height - 40) { pos = Offset(pos.dx, arenaSize.height - 40); vel = Offset(vel.dx, -vel.dy); }
-       
-       clone['pos'] = pos;
-       clone['vel'] = vel;
-       
-       // Check Collision with ENEMY
-       int team = clone['team'];
-       Offset targetPos = team == 1 ? pos2 : pos1;
-       
-       // Distance
-       Offset c1 = pos + Offset(GameConfig.playerSize/2, GameConfig.playerSize/2);
-       Offset c2 = targetPos + Offset(GameConfig.playerSize/2, GameConfig.playerSize/2);
-       double dist = (c1 - c2).distance;
-       
-       if (dist < GameConfig.playerSize) { // Full size collision
-           // Hit!
-           /* 
-           // Clones do NOT deal damage (per user request)
-           bool ownerHasSword = team == 1 ? swordTime1 > 0 : swordTime2 > 0;
-           bool targetHasShield = team == 1 ? shieldTime2 > 0 : shieldTime1 > 0;
-           
-           if (ownerHasSword && !targetHasShield) {
-               if (team == 1) hp2 = max(0, hp2 - GameConfig.damage);
-               else hp1 = max(0, hp1 - GameConfig.damage);
-           }
-           */
-           
-           // Bounce clone away strongly
-           clone['vel'] = -vel; 
-       }
-    }
-  }
+  /* REMOVED _updateClones as it is now in CloneManager */
 
   void spawnPowerUp() {
     if (arenaSize == Size.zero) return;
@@ -316,6 +271,17 @@ class GameEngine {
         } else if (collides2) {
             picker = 2;
             picked = true;
+        }
+        
+        // 3. Check Clones
+        if (!picked) {
+             for (var clone in _clones.clones) {
+                 if (_checkCollision(clone['pos'], GameConfig.playerSize, itemPos, GameConfig.powerUpSize)) {
+                     picker = clone['team'];
+                     picked = true;
+                     break; 
+                 }
+             }
         }
         
         if (picked) {

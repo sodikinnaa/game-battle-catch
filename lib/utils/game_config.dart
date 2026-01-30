@@ -8,7 +8,7 @@ class GameConfig {
   static const double totalEffectDuration = 5.0; // Seconds
   static const int initialHp = 100;
   static const int damage = 10;
-  static const int matchDuration = 60; // Seconds
+  static const int matchDuration = 120; // Seconds
 
   // Power Up Types
   static const int powerUpNone = 0;

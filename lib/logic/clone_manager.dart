@@ -1,5 +1,5 @@
 import 'dart:ui';
-import '../game_config.dart';
+import '../utils/game_config.dart';
 
 class CloneManager {
   List<Map<String, dynamic>> clones = [];
@@ -17,7 +17,10 @@ class CloneManager {
      });
   }
 
-  void update(double dt, Size arenaSize, Offset pos1, Offset pos2) {
+  Function(int targetTeam, int damage)? onDamage;
+
+  void update(double dt, Size arenaSize, Offset pos1, Offset pos2, 
+      double swordTime1, double swordTime2, double shieldTime1, double shieldTime2) {
     for (int i = clones.length - 1; i >= 0; i--) {
        var clone = clones[i];
        clone['life'] -= dt;
@@ -71,8 +74,20 @@ class CloneManager {
            if (dotProduct < 0) {
                Offset reflection = Offset(nx, ny) * (2 * dotProduct);
                vel -= reflection;
-               // Add tiny friction/restitution loss? or keep 1.0 elasticity
                clone['vel'] = vel; 
+           }
+           
+           // 4. Apply Damage
+           // Logic: Clone (Team X) hits Enemy (Team Y).
+           // If Team X has Sword AND Team Y NO Shield -> Damage Y.
+           bool ownerHasSword = team == 1 ? swordTime1 > 0 : swordTime2 > 0;
+           bool targetHasShield = team == 1 ? shieldTime2 > 0 : shieldTime1 > 0;
+           
+           if (ownerHasSword && !targetHasShield) {
+               // Prevent multi-damage per frame? Maybe add cooldown?
+               // For now, raw collision damage.
+               int targetTeam = team == 1 ? 2 : 1;
+               onDamage?.call(targetTeam, GameConfig.damage);
            }
        }
     }

@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
-import 'game_config.dart';
-import 'logic/game_engine.dart';
+import '../utils/game_config.dart';
+import '../logic/game_engine.dart';
 
 class GameArena extends StatefulWidget {
   final String team1;
@@ -52,6 +52,7 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
   }
   
   void _spawnPowerUp() {
+    if (!mounted) return;
     setState(() {
        _engine.spawnPowerUp();
     });
@@ -59,7 +60,7 @@ class _GameArenaState extends State<GameArena> with SingleTickerProviderStateMix
   }
 
   void _tick(Duration elapsed) {
-    if (!_initialized || _arenaSize == Size.zero) return;
+    if (!mounted || !_initialized || _arenaSize == Size.zero) return;
     
     setState(() {
         // Approximate dt (16ms)

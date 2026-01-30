@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
-import 'home_page.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'views/splash_screen.dart';
 
-void main() {
+void main() async {
+  await dotenv.load(fileName: ".env");
   runApp(const MyApp());
 }
 
@@ -17,7 +19,7 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
         scaffoldBackgroundColor: const Color(0xFF1A1A2E), // Dark background for the app
       ),
-      home: const HomePage(),
+      home: const SplashScreen(),
     );
   }
 }
