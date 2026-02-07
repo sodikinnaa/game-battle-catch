@@ -13,7 +13,7 @@ class AuthService {
     // Priority 1: Use API_URL from .env if available
     final envUrl = dotenv.env['API_URL'];
     if (envUrl != null && envUrl.isNotEmpty) {
-       return envUrl;
+      return envUrl;
     }
     // Priority 2: Fallback for local development
     if (Platform.isAndroid) return 'http://10.0.2.2:8000';
@@ -28,9 +28,9 @@ class AuthService {
     scopes: ['email', 'profile', 'openid'],
     // serverClientId MUST be a valid "Web application" Client ID.
     // We are using the one from .env (User provided: ...sta4.apps.googleusercontent.com)
-    serverClientId: dotenv.env['GOOGLE_CLIENT_ID'], 
+    serverClientId: dotenv.env['GOOGLE_CLIENT_ID'],
   );
-  
+
   // Storage for tokens
   final _storage = const FlutterSecureStorage();
 
@@ -39,11 +39,11 @@ class AuthService {
     try {
       print('DEBUG: Initializing Google Sign In...');
       print('DEBUG: checking current user: ${_googleSignIn.currentUser}');
-      
+
       // 1. Trigger the authentication flow
       print('DEBUG: Calling _googleSignIn.signIn()...');
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-      
+
       if (googleUser == null) {
         print('DEBUG: Google Sign In canceled by user.');
         return null;
@@ -53,17 +53,20 @@ class AuthService {
       print('DEBUG: Obtaining auth details...');
 
       // 2. Obtain the auth details from the request
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-      
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+
       // We need the idToken to send to the backend
       final String? idToken = googleAuth.idToken;
       final String? accessToken = googleAuth.accessToken;
-      
+
       print('DEBUG: idToken present? ${idToken != null}');
       print('DEBUG: accessToken present? ${accessToken != null}');
 
       if (idToken == null) {
-        print('Error: ID Token is null. This might happen if serverClientId is missing or incorrect.');
+        print(
+          'Error: ID Token is null. This might happen if serverClientId is missing or incorrect.',
+        );
         throw Exception('Failed to retrieve ID Token from Google');
       }
 
@@ -71,16 +74,109 @@ class AuthService {
 
       // 3. Send the ID token to the backend for verification
       return await _verifyTokenWithBackend(idToken);
-      
     } catch (e) {
       print('DEBUG: Error during Google Sign In: $e');
       if (e.toString().contains("ApiException: 10")) {
         print("CRITICAL ERROR: ApiException: 10 detected.");
         print("Possible causes:");
-        print("1. SHA-1 Fingerprint mismatch. Did you add SHA-1: 75:B1:3D:BD:FB:A4:C3:8D:AF:24:FB:F9:EE:EA:34:60:84:C0:C3:7E to Firebase/Google Cloud Console?");
-        print("2. Package Name mismatch. Is it 'com.example.frontend_game' in Console?");
-        print("3. serverClientId is wrong. Do NOT use the Android Client ID. Use the WEB Client ID.");
+        print(
+          "1. SHA-1 Fingerprint mismatch. Did you add SHA-1: 75:B1:3D:BD:FB:A4:C3:8D:AF:24:FB:F9:EE:EA:34:60:84:C0:C3:7E to Firebase/Google Cloud Console?",
+        );
+        print(
+          "2. Package Name mismatch. Is it 'com.example.frontend_game' in Console?",
+        );
+        print(
+          "3. serverClientId is wrong. Do NOT use the Android Client ID. Use the WEB Client ID.",
+        );
       }
+      rethrow;
+    }
+  }
+
+  // Sign in with Email and Password
+  Future<Map<String, dynamic>> signInWithEmail(
+    String email,
+    String password,
+  ) async {
+    final url = Uri.parse('$_baseUrl/auth/login');
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'email': email, 'password': password}),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['token'] != null) {
+          await _storage.write(
+            key: 'access_token',
+            value: data['token']['access_token'],
+          );
+          await _storage.write(
+            key: 'refresh_token',
+            value: data['token']['refresh_token'],
+          );
+        }
+        if (data['user'] != null) {
+          await _storage.write(
+            key: 'user_data',
+            value: jsonEncode(data['user']),
+          );
+        }
+        return data;
+      } else {
+        final error = jsonDecode(response.body);
+        throw Exception(error['message'] ?? 'Login failed');
+      }
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  // Register with Email and Password
+  Future<Map<String, dynamic>> registerWithEmail(
+    String name,
+    String email,
+    String password,
+  ) async {
+    final url = Uri.parse('$_baseUrl/auth/register');
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'name': name,
+          'email': email,
+          'password': password,
+          'password_confirmation': password,
+        }),
+      );
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['token'] != null) {
+          await _storage.write(
+            key: 'access_token',
+            value: data['token']['access_token'],
+          );
+          await _storage.write(
+            key: 'refresh_token',
+            value: data['token']['refresh_token'],
+          );
+        }
+        if (data['user'] != null) {
+          await _storage.write(
+            key: 'user_data',
+            value: jsonEncode(data['user']),
+          );
+        }
+        return data;
+      } else {
+        final error = jsonDecode(response.body);
+        throw Exception(error['message'] ?? 'Registration failed');
+      }
+    } catch (e) {
       rethrow;
     }
   }
@@ -88,16 +184,12 @@ class AuthService {
   // Helper to post the token to the backend
   Future<Map<String, dynamic>> _verifyTokenWithBackend(String idToken) async {
     final url = Uri.parse('$_baseUrl/auth/google/verify');
-    
+
     try {
       final response = await http.post(
         url,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'id_token': idToken,
-        }),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'id_token': idToken}),
       );
 
       print('Backend Response Status: ${response.statusCode}');
@@ -105,17 +197,26 @@ class AuthService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        
+
         // 4. Save the session tokens from the backend
         if (data['token'] != null) {
-          await _storage.write(key: 'access_token', value: data['token']['access_token']);
-          await _storage.write(key: 'refresh_token', value: data['token']['refresh_token']);
+          await _storage.write(
+            key: 'access_token',
+            value: data['token']['access_token'],
+          );
+          await _storage.write(
+            key: 'refresh_token',
+            value: data['token']['refresh_token'],
+          );
         }
-        
+
         if (data['user'] != null) {
-           await _storage.write(key: 'user_data', value: jsonEncode(data['user']));
+          await _storage.write(
+            key: 'user_data',
+            value: jsonEncode(data['user']),
+          );
         }
-        
+
         return data;
       } else {
         throw Exception('Backend verification failed: ${response.body}');
@@ -130,7 +231,7 @@ class AuthService {
   Future<Map<String, dynamic>> getProfile() async {
     final url = Uri.parse('$_baseUrl/user/profile');
     final accessToken = await _storage.read(key: 'access_token');
-    
+
     if (accessToken == null) throw Exception("No access token found");
 
     try {
@@ -153,10 +254,13 @@ class AuthService {
   }
 
   // Update Profile
-  Future<Map<String, dynamic>> updateProfile(String name, String avatarUrl) async {
+  Future<Map<String, dynamic>> updateProfile(
+    String name,
+    String avatarUrl,
+  ) async {
     final url = Uri.parse('$_baseUrl/user/profile');
     final accessToken = await _storage.read(key: 'access_token');
-    
+
     if (accessToken == null) throw Exception("No access token found");
 
     try {
@@ -166,17 +270,17 @@ class AuthService {
           'Authorization': 'Bearer $accessToken',
           'Content-Type': 'application/json',
         },
-        body: jsonEncode({
-          'name': name,
-          'avatar_url': avatarUrl,
-        }),
+        body: jsonEncode({'name': name, 'avatar_url': avatarUrl}),
       );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         // Update local user data if returned
         if (data['user'] != null) {
-          await _storage.write(key: 'user_data', value: jsonEncode(data['user']));
+          await _storage.write(
+            key: 'user_data',
+            value: jsonEncode(data['user']),
+          );
         }
         return data;
       } else {
@@ -191,21 +295,16 @@ class AuthService {
   Future<List<dynamic>> getTeams() async {
     final url = Uri.parse('$_baseUrl/teams');
     final accessToken = await _storage.read(key: 'access_token');
-    
-    Map<String, String> headers = {
-      'Content-Type': 'application/json',
-    };
-    
+
+    Map<String, String> headers = {'Content-Type': 'application/json'};
+
     // Add token if available
     if (accessToken != null) {
       headers['Authorization'] = 'Bearer $accessToken';
     }
 
     try {
-      final response = await http.get(
-        url,
-        headers: headers,
-      );
+      final response = await http.get(url, headers: headers);
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -265,7 +364,11 @@ class AuthService {
   }
 
   // Save/Update User Team
-  Future<Map<String, dynamic>> saveUserTeam(String teamId, String avatarId, String customName) async {
+  Future<Map<String, dynamic>> saveUserTeam(
+    String teamId,
+    String avatarId,
+    String customName,
+  ) async {
     final url = Uri.parse('$_baseUrl/user/team');
     final accessToken = await _storage.read(key: 'access_token');
     if (accessToken == null) throw Exception("No access token found");
@@ -299,11 +402,9 @@ class AuthService {
   Future<List<dynamic>> getPlayerTeams() async {
     final url = Uri.parse('$_baseUrl/user-teams');
     final accessToken = await _storage.read(key: 'access_token');
-    
+
     // Auth might be optional but recommended to filter out own team
-    Map<String, String> headers = {
-      'Content-Type': 'application/json',
-    };
+    Map<String, String> headers = {'Content-Type': 'application/json'};
     if (accessToken != null) {
       headers['Authorization'] = 'Bearer $accessToken';
     }
@@ -327,7 +428,7 @@ class AuthService {
     try {
       // disconnect() ensures the user is fully logged out from Google on this app,
       // forcing the account picker to appear on the next login.
-      await _googleSignIn.disconnect(); 
+      await _googleSignIn.disconnect();
     } catch (e) {
       print("Error disconnecting: $e");
       // Fallback to sign out if disconnect fails (e.g. if not signed in)

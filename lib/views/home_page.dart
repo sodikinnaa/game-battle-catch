@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'login_page.dart';
+import 'register_page.dart';
 import 'match_selection_page.dart';
 
 class HomePage extends StatelessWidget {
@@ -46,14 +47,14 @@ class HomePage extends StatelessWidget {
                   ),
                 ),
               ),
-              
+
               const Spacer(),
-              
+
               // Option 1: Login
               _buildOptionCard(
                 context,
                 title: "Login",
-                subtitle: "Akses fitur premium & simpan progress",
+                subtitle: "Masuk ke akun Anda",
                 icon: Icons.login,
                 color: Colors.purpleAccent,
                 onTap: () {
@@ -63,10 +64,29 @@ class HomePage extends StatelessWidget {
                   );
                 },
               ),
-              
-              const SizedBox(height: 20),
 
-              // Option 2: Watch Match (Nonton Biasa)
+              const SizedBox(height: 15),
+
+              // Option 2: Register
+              _buildOptionCard(
+                context,
+                title: "Register",
+                subtitle: "Daftar akun baru gratis",
+                icon: Icons.person_add_outlined,
+                color: Colors.orangeAccent,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const RegisterPage(),
+                    ),
+                  );
+                },
+              ),
+
+              const SizedBox(height: 15),
+
+              // Option 3: Watch Match (Nonton Biasa)
               _buildOptionCard(
                 context,
                 title: "Nonton Pertandingan Biasa",
@@ -76,21 +96,20 @@ class HomePage extends StatelessWidget {
                 onTap: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => const MatchSelectionPage()),
+                    MaterialPageRoute(
+                      builder: (context) => const MatchSelectionPage(),
+                    ),
                   );
                 },
               ),
-              
+
               const Spacer(),
-              
+
               // Footer
               const Center(
                 child: Text(
                   "v1.0.0 • Powered by Flutter",
-                  style: TextStyle(
-                    color: Colors.white24,
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: Colors.white24, fontSize: 12),
                 ),
               ),
               const SizedBox(height: 10),
@@ -121,10 +140,7 @@ class HomePage extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.05),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: color.withOpacity(0.3),
-              width: 1.5,
-            ),
+            border: Border.all(color: color.withOpacity(0.3), width: 1.5),
             boxShadow: [
               BoxShadow(
                 color: color.withOpacity(0.1),
@@ -141,11 +157,7 @@ class HomePage extends StatelessWidget {
                   color: color.withOpacity(0.1),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(
-                  icon,
-                  color: color,
-                  size: 32,
-                ),
+                child: Icon(icon, color: color, size: 32),
               ),
               const SizedBox(width: 20),
               Expanded(
